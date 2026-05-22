@@ -1,0 +1,1347 @@
+<!DOCTYPE html>
+<!-- saved from url=(0022)http://localhost:3000/ -->
+<html lang="ko"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+  
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <!-- PWA / 홈 화면 -->
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="신트리">
+  <meta name="theme-color" content="#0064FF">
+  <link rel="manifest" href="http://localhost:3000/manifest.json">
+  <link rel="apple-touch-icon" href="http://localhost:3000/icons/apple-touch-icon.png">
+  <title>신트리 도서관 큐레이션</title>
+
+  <style>
+    /* ══ Reset ══════════════════════════════════════════ */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    img { display: block; }
+    button { font-family: inherit; }
+
+    /* ══ Base ═══════════════════════════════════════════ */
+    body {
+      font-family: -apple-system, 'SF Pro Display', 'SF Pro Text', 'Helvetica Neue', sans-serif;
+      background: #F7F8FA;
+      color: #191F28;
+      min-height: 100vh;
+      padding: 20px 16px 100px;
+      -webkit-font-smoothing: antialiased;
+      padding-bottom: calc(100px + env(safe-area-inset-bottom));
+    }
+    .container { max-width: 480px; margin: 0 auto; }
+
+    /* ══ 텍스트 헤더 ════════════════════════════════════ */
+    .page-header { margin-bottom: 28px; padding-top: 8px; }
+    .header-vol {
+      font-size: 10.5px; font-weight: 700; letter-spacing: .14em;
+      text-transform: uppercase; color: #8B95A1; margin-bottom: 8px;
+    }
+    .header-concept {
+      font-size: 24px; font-weight: 800; line-height: 1.3;
+      color: #191F28; margin-bottom: 10px; letter-spacing: -.02em;
+    }
+    .concept-emoji { display: inline-block; }
+    .header-desc {
+      font-size: 13px; color: #4E5968; line-height: 1.75;
+      white-space: pre-line;
+    }
+
+    /* ══ 대출 요약 바 ════════════════════════════════════ */
+    .borrowed-bar {
+      display: none;
+      background: #E8FAF0;
+      border-radius: 12px;
+      padding: 10px 16px;
+      margin-bottom: 14px;
+      font-size: 13px;
+      color: #1A7F4B;
+      font-weight: 600;
+      align-items: center;
+      gap: 8px;
+      line-height: 1.5;
+    }
+    .borrowed-bar.visible { display: flex; }
+
+    /* ══ 섹션 레이블 ══════════════════════════════════════ */
+    .section-label {
+      display:flex;align-items:center;gap:7px;
+      font-size:11px;font-weight:700;color:#8B95A1;
+      letter-spacing:.1em;text-transform:uppercase;
+      margin:28px 0 10px;padding:0 2px;
+    }
+    .bonus-pill {
+      font-size:10px;font-weight:800;
+      background:linear-gradient(135deg,#FF6B35,#FF8E53);
+      color:#fff;padding:2px 8px;border-radius:20px;letter-spacing:.06em;
+    }
+
+    /* ══ 책 카드 ══════════════════════════════════════════ */
+    .book-card {
+      background: #FFFFFF;
+      border-radius: 20px;
+      padding: 20px;
+      margin-bottom: 12px;
+      box-shadow: 0 1px 0 rgba(0,0,0,.04), 0 2px 12px rgba(0,0,0,.05);
+      transition: opacity 0.3s ease, transform 0.2s ease;
+    }
+    .book-card.borrowed {
+      opacity: 0.32;
+      filter: grayscale(55%);
+      position: relative;
+    }
+    /* 대출완료 스탬프 오버레이 */
+    .book-card.borrowed .book-title::after {
+      content: '';
+      display: inline-block;
+      width: 100%; height: 2px;
+      background: #8B95A1;
+      position: absolute; left: 0; top: 50%;
+      transform: translateY(-50%);
+    }
+    .book-card.borrowed .book-title {
+      position: relative;
+      text-decoration: line-through;
+      text-decoration-color: #8B95A1;
+      text-decoration-thickness: 2px;
+    }
+
+    .book-top { display:flex;gap:14px;margin-bottom:16px;align-items:flex-start; }
+    .book-cover {
+      width:68px;height:96px;border-radius:8px;object-fit:cover;flex-shrink:0;
+      box-shadow:0 4px 12px rgba(0,0,0,.14);
+    }
+    .book-cover-placeholder {
+      width:68px;height:96px;border-radius:8px;background:#EBF3FF;flex-shrink:0;
+      display:flex;align-items:center;justify-content:center;font-size:22px;
+    }
+    .book-meta { flex:1;padding-top:2px;min-width:0; }
+
+    .book-badge {
+      display:inline-block;font-size:10.5px;font-weight:700;
+      padding:3px 8px;border-radius:20px;margin-bottom:8px;
+    }
+    .badge-green  { background:#E8FAF0;color:#1A7F4B; }
+    .badge-yellow { background:#FFF8E1;color:#9A6A00; }
+    .badge-blue   { background:#E8F1FF;color:#0064FF;text-decoration:none; }
+    .badge-blue:hover { background:#D6E8FF; }
+    .badge-gray   { background:#F2F4F6;color:#8B95A1; }
+
+    .book-title  { font-size:15px;font-weight:800;color:#191F28;line-height:1.35;margin-bottom:3px; }
+    .book-author { font-size:12px;color:#8B95A1;font-weight:500; }
+
+    /* 훅 문장 */
+    .hook-sentence {
+      font-size:13.5px;font-style:italic;color:#191F28;
+      line-height:1.65;padding:12px 14px;
+      background:#F0F6FF;border-left:3px solid #0064FF;
+      border-radius:0 10px 10px 0;margin-bottom:16px;
+    }
+
+    /* Q&A */
+    .qa-list { display:flex;flex-direction:column;gap:10px;margin-bottom:14px; }
+    .qa-item  { display:flex;flex-direction:column;gap:6px; }
+    .qa-q {
+      font-size:13px;background:#F2F4F6;
+      border-radius:14px 14px 14px 4px;
+      padding:10px 13px;color:#3D4A5C;
+      align-self:flex-start;max-width:88%;line-height:1.5;
+    }
+    .qa-a {
+      font-size:13px;background:#0064FF;color:#fff;
+      border-radius:14px 14px 4px 14px;
+      padding:10px 13px;align-self:flex-end;
+      max-width:88%;line-height:1.55;
+    }
+
+    /* 태그 */
+    .tag-list { display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px; }
+    .tag { font-size:11px;color:#0064FF;background:#F0F6FF;padding:4px 10px;border-radius:20px;font-weight:600; }
+
+    /* ══ 책 소개 토글 ══════════════════════════════════ */
+    .desc-toggle {
+      display:flex;align-items:center;gap:6px;
+      width:100%;background:none;border:none;padding:0;margin-bottom:12px;
+      color:#8B95A1;font-size:12px;font-weight:600;cursor:pointer;
+      -webkit-tap-highlight-color:transparent;text-align:left;
+    }
+    .desc-toggle .desc-arrow { transition:transform 0.2s;display:inline-block; }
+    .desc-toggle.open .desc-arrow { transform:rotate(180deg); }
+    .book-desc-content {
+      display:none;font-size:13px;color:#4E5968;line-height:1.7;
+      background:#F8FAFC;border-radius:10px;padding:12px 14px;
+      margin-bottom:12px;white-space:pre-wrap;word-break:keep-all;
+    }
+    .book-desc-content.visible { display:block; }
+
+    /* ══ 대출 버튼 ════════════════════════════════════════ */
+    .borrow-btn {
+      width:100%;display:flex;align-items:center;justify-content:center;gap:6px;
+      padding:11px 14px;border-radius:12px;
+      border:1.5px solid #E2E8F0;background:transparent;
+      color:#8B95A1;font-size:13px;font-weight:600;
+      cursor:pointer;transition:all 0.2s;
+      -webkit-tap-highlight-color:transparent;
+    }
+    .borrow-btn:active { transform:scale(0.97); }
+    .borrow-btn.checked {
+      background:#E8FAF0;border-color:#34C759;color:#1A7F4B;
+    }
+
+    /* ══ 히스토리 버튼 ══════════════════════════════════ */
+    .history-btn {
+      background:none;border:none;cursor:pointer;
+      font-size:20px;padding:4px;opacity:0.5;
+      -webkit-tap-highlight-color:transparent;flex-shrink:0;margin-top:2px;
+    }
+    .history-btn:active { opacity:1; }
+
+    /* ══ 바텀시트 공통 ══════════════════════════════════ */
+    .sheet-backdrop {
+      position:fixed;inset:0;z-index:300;
+      background:rgba(0,0,0,.45);
+      opacity:0;pointer-events:none;transition:opacity 0.25s;
+    }
+    .sheet-backdrop.open { opacity:1;pointer-events:all; }
+    .sheet {
+      position:fixed;bottom:0;left:50%;
+      transform:translateX(-50%) translateY(100%);
+      width:100%;max-width:480px;z-index:301;
+      background:#fff;border-radius:24px 24px 0 0;
+      padding:0 0 calc(20px + env(safe-area-inset-bottom));
+      transition:transform 0.3s cubic-bezier(.32,.72,0,1);
+      max-height:85vh;overflow:hidden;display:flex;flex-direction:column;
+    }
+    .sheet.open { transform:translateX(-50%) translateY(0); }
+    .sheet-handle {
+      width:36px;height:4px;border-radius:2px;
+      background:#E2E8F0;margin:12px auto 0;flex-shrink:0;
+    }
+    .sheet-title {
+      font-size:16px;font-weight:800;color:#191F28;
+      padding:14px 20px 10px;flex-shrink:0;
+    }
+    .sheet-body { overflow-y:auto;padding:0 16px 16px;flex:1; }
+
+    /* ══ 히스토리 아이템 ═════════════════════════════════ */
+    .history-item {
+      display:flex;align-items:center;gap:12px;
+      padding:12px 4px;border-bottom:1px solid #F2F4F6;
+      cursor:pointer;-webkit-tap-highlight-color:transparent;
+      transition:background 0.15s;border-radius:8px;
+    }
+    .history-item:last-child { border-bottom:none; }
+    .history-item:active { background:#F7F8FA; }
+    .history-item-emoji { font-size:22px;flex-shrink:0; }
+    .history-item-info { flex:1;min-width:0; }
+    .history-item-vol  { font-size:10.5px;color:#8B95A1;font-weight:700;letter-spacing:.08em; }
+    .history-item-title { font-size:14px;font-weight:700;color:#191F28;margin:2px 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis; }
+    .history-item-meta { font-size:11px;color:#8B95A1; }
+    .history-item-arrow { color:#C9CDD2;font-size:16px;flex-shrink:0; }
+    .history-item.active .history-item-vol   { color:#0064FF; }
+    .history-item.active .history-item-title { color:#0064FF; }
+
+    /* ══ 도서관 확인 시트 ════════════════════════════════ */
+    .lib-check-row {
+      display:flex;align-items:center;gap:12px;
+      padding:14px 4px;border-bottom:1px solid #F2F4F6;
+    }
+    .lib-check-row:last-of-type { border-bottom:none; }
+    .lib-check-label { flex:1;font-size:14px;color:#191F28;font-weight:600; }
+    .lib-check-status { font-size:13px;font-weight:700; }
+    .lib-check-status.green   { color:#1A7F4B; }
+    .lib-check-status.yellow  { color:#9A6A00; }
+    .lib-check-status.gray    { color:#8B95A1; }
+    .lib-sheet-cta {
+      display:flex;align-items:center;justify-content:center;gap:8px;
+      margin-top:16px;padding:14px;border-radius:14px;
+      background:#0064FF;color:#fff;
+      font-size:14px;font-weight:700;text-decoration:none;
+    }
+
+    /* ══ 도서관 확인 버튼 (카드 내) ═══════════════════════ */
+    .lib-btn {
+      display:flex;align-items:center;justify-content:center;gap:5px;
+      width:100%;padding:10px 14px;border-radius:12px;
+      border:1.5px solid #E2E8F0;background:transparent;
+      color:#4E5968;font-size:13px;font-weight:600;
+      cursor:pointer;transition:background 0.15s;margin-bottom:8px;
+      -webkit-tap-highlight-color:transparent;
+    }
+    .lib-btn:active { background:#F2F4F6; }
+
+    /* ══ CTA 버튼 ═════════════════════════════════════════ */
+    .library-cta { margin:32px 0 20px; }
+    .library-btn {
+      display:flex;align-items:center;justify-content:center;gap:8px;
+      width:100%;background:#0064FF;color:#fff;
+      font-size:15px;font-weight:700;padding:16px;
+      border-radius:16px;text-decoration:none;
+      box-shadow:0 4px 18px rgba(0,100,255,.26);
+    }
+    .library-btn-sub { text-align:center;font-size:11px;color:#8B95A1;margin-top:8px; }
+
+    /* ══ 명언 카드 (curator-note 대체) ══════════════════ */
+    .quote-card {
+      background:#FFFFFF;border-radius:20px;padding:24px;
+      text-align:center;
+      box-shadow:0 1px 0 rgba(0,0,0,.04), 0 2px 12px rgba(0,0,0,.05);
+      animation:fadeUp 0.5s ease;
+    }
+    @keyframes fadeUp { from{opacity:0;transform:translateY(8px);}to{opacity:1;transform:none;} }
+    .quote-label  { font-size:10px;font-weight:700;color:#0064FF;letter-spacing:.1em;text-transform:uppercase;margin-bottom:12px; }
+    .quote-text   { font-size:15px;color:#191F28;line-height:1.8;font-style:italic;margin-bottom:8px; }
+    .quote-author { font-size:12px;color:#8B95A1;font-weight:500; }
+
+    /* ══ 푸터 ════════════════════════════════════════════ */
+    .footer { text-align:center;margin-top:20px; }
+    .footer-date { font-size:12px;color:#8B95A1;margin-bottom:8px; }
+    .footer-tags { font-size:12px;color:#0064FF;line-height:1.9;font-weight:500; }
+
+    /* ══ 새로고침 FAB ═════════════════════════════════════ */
+    .fab {
+      position:fixed;
+      bottom:calc(28px + env(safe-area-inset-bottom));
+      right:20px;
+      width:56px;height:56px;border-radius:50%;
+      background:#0064FF;
+      box-shadow:0 4px 20px rgba(0,100,255,.38);
+      border:none;cursor:pointer;
+      display:flex;align-items:center;justify-content:center;
+      z-index:100;
+      transition:transform 0.2s,box-shadow 0.2s,opacity 0.2s;
+      -webkit-tap-highlight-color:transparent;
+    }
+    .fab:active { transform:scale(0.9);box-shadow:0 2px 10px rgba(0,100,255,.3); }
+    .fab:disabled { opacity:0.6;cursor:not-allowed; }
+    .fab-icon { font-size:22px;color:#fff;display:inline-block;line-height:1;transition:transform 0.3s; }
+    .fab.spinning .fab-icon { animation:spin 0.65s linear infinite; }
+    @keyframes spin { from{transform:rotate(0deg);}to{transform:rotate(360deg);} }
+
+    /* ══ AI 생성 상태 토스트 ═══════════════════════════════ */
+    .ai-toast {
+      position:fixed;bottom:calc(100px + env(safe-area-inset-bottom));right:16px;
+      background:rgba(0,0,0,.82);color:#fff;
+      font-size:13px;font-weight:500;line-height:1.5;
+      padding:10px 16px;border-radius:14px;
+      opacity:0;transform:translateY(8px);
+      transition:opacity 0.25s,transform 0.25s;
+      pointer-events:none;z-index:200;max-width:220px;text-align:center;
+    }
+    .ai-toast.show { opacity:1;transform:translateY(0); }
+
+
+    /* ══ 로딩 ════════════════════════════════════════════ */
+    .loading {
+      display:flex;flex-direction:column;
+      align-items:center;justify-content:center;
+      min-height:60vh;gap:16px;
+      color:#8B95A1;font-size:14px;
+    }
+    .spinner {
+      width:36px;height:36px;
+      border:3px solid #E2E8F0;border-top-color:#0064FF;
+      border-radius:50%;animation:spin 0.8s linear infinite;
+    }
+
+    /* ══ 에러 ════════════════════════════════════════════ */
+    .error-card {
+      background:#FFF5F5;border-radius:20px;padding:28px;
+      text-align:center;color:#C53030;font-size:14px;line-height:1.7;
+    }
+    .error-card button {
+      margin-top:18px;padding:10px 22px;
+      background:#0064FF;color:#fff;
+      border:none;border-radius:12px;
+      font-size:14px;font-weight:600;cursor:pointer;
+    }
+  </style>
+</head>
+<body>
+  <div class="container" id="app">
+      <!-- 텍스트 헤더 -->
+      <div class="page-header">
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px">
+          <div style="flex:1;min-width:0">
+            <div class="header-vol">2026 · Vol.19</div>
+            <div class="header-concept">
+              <span class="concept-emoji">✨</span> 읽고 나서 달라진 사람들의 책
+            </div>
+            <div class="header-desc">독자들이 "인생 책"이라 부르는 책들이에요.
+지금이 만날 때인지도 몰라요.</div>
+          </div>
+          <button class="history-btn" onclick="openHistorySheet()" title="지난 큐레이션 보기">📋</button>
+        </div>
+      </div>
+
+      <!-- 대출 요약 바 -->
+      <div class="borrowed-bar visible" id="borrowed-bar">
+        📌 내 대출 목록에 <strong>2권</strong> 추가됨
+      </div>
+
+      <!-- 섹션 -->
+      
+      <div class="section-group">
+        <div class="section-label">✍️ 에세이</div>
+        
+      <div class="book-card" data-isbn="9788970125930" data-title="이렇게 작지만 확실한 행복">
+        <div class="book-top">
+          <img class="book-cover" src="./신트리 도서관 큐레이션_files/48242543625.20260331104500.jpg" alt="이렇게 작지만 확실한 행복 표지" loading="lazy">
+          <div class="book-meta">
+            
+            <div class="book-title">이렇게 작지만 확실한 행복</div>
+            <div class="book-author">무라카미 하루키</div>
+          </div>
+        </div>
+        <div class="hook-sentence">“‘소확행’ 열풍을 불러일으킨 무라카미 하루키 감성 에세이.”</div>
+        <div class="qa-list">
+      <div class="qa-item">
+        <div class="qa-q">🙋 “밑줄 많이 긋게 되는 책인가요?”</div>
+        <div class="qa-a">📚 빌려 읽으면 조금 아쉬울 책이에요. 소장하고 싶어지는 문장들이 자꾸 나오거든요 📝</div>
+      </div>
+      <div class="qa-item">
+        <div class="qa-q">🙋 “선물용으로도 좋을까요?”</div>
+        <div class="qa-a">📚 "‘소확행’ 열풍을 불러일으킨 무라카미 하루키 감성 에세이"가 담긴 책을 선물하면, 주는 사람의 마음도 함께 전해지는 느낌이에요. 짧은 메모 끼워서 주면 더 특별해져요 🎁</div>
+      </div></div>
+        <div class="tag-list"><span class="tag">#에세이</span><span class="tag">#선물추천</span><span class="tag">#따뜻함</span></div>
+        
+        <button class="desc-toggle" aria-expanded="false">
+          📄 책 소개 보기 <span class="desc-arrow">▼</span>
+        </button>
+        <div class="book-desc-content">‘소확행’ 열풍을 불러일으킨 무라카미 하루키 감성 에세이</div>
+        <button class="lib-btn" onclick="openLibSheet(&#39;9788970125930&#39;,&#39;이렇게 작지만 확실한 행복&#39;)">🏛️ 도서관 대출 현황 확인</button>
+        <button class="borrow-btn">
+          📖 내 대출 목록에 추가
+        </button>
+      </div>
+      <div class="book-card" data-isbn="9791190301190" data-title="달고나와 이발소 그림">
+        <div class="book-top">
+          <img class="book-cover" src="./신트리 도서관 큐레이션_files/34128864664.20260331110018.jpg" alt="달고나와 이발소 그림 표지" loading="lazy">
+          <div class="book-meta">
+            
+            <div class="book-title">달고나와 이발소 그림</div>
+            <div class="book-author">허윤숙</div>
+          </div>
+        </div>
+        <div class="hook-sentence">“가끔, 따뜻함이 눈물 나게 그립다
+
+  허윤숙 선생님은 《달고나와 이발소 그림》이란 제...”</div>
+        <div class="qa-list">
+      <div class="qa-item">
+        <div class="qa-q">🙋 “부모님께 선물하기 좋은 책인가요?”</div>
+        <div class="qa-a">📚 "가끔, 따뜻함이 눈물 나게 그립다" — 자녀가 먼저 읽고 드리면 더 특별한 선물이 될 거예요. 부모님 세대가 읽으면 눈물 흘릴 수 있어요 💌</div>
+      </div>
+      <div class="qa-item">
+        <div class="qa-q">🙋 “가족 관계가 힘들 때 읽으면 도움이 될까요?”</div>
+        <div class="qa-a">📚 이 책이 해결책을 주진 않아요. 하지만 "이런 감정이 당연한 거구나"라는 안도감을 줘요. 가족 때문에 지쳐있을 때 읽으면 위로가 돼요 🤍</div>
+      </div></div>
+        <div class="tag-list"><span class="tag">#에세이</span><span class="tag">#공감</span><span class="tag">#일상</span></div>
+        
+        <button class="desc-toggle" aria-expanded="false">
+          📄 책 소개 보기 <span class="desc-arrow">▼</span>
+        </button>
+        <div class="book-desc-content">가끔, 따뜻함이 눈물 나게 그립다
+
+  허윤숙 선생님은 《달고나와 이발소 그림》이란 제목으로 세 번째 저서를 발행한다. 선생님은 586세대다. 가난한 전후 세대로 태어나 반세기를 살았다. 가끔은 지금을 살아내는 게 버겁다고 한다. 그 때문인지 무엇보다 어린 시절 따뜻했던 공동체에 대한 그리움이 갖고 있다. 그 그리움을 꾸역꾸역 삼키며 그리움을 책으로 토해냈다.
+ 나이가 들면 뭐든 남들과 나누고 싶어한다. 허윤숙 선생님은 그 시절의 따뜻함을 사람들과 나누고 싶어 한다. 지금은 기억 속에 존재하는 6, 70년대의 가난과 사람 냄새 나는 이야기이다. 책에는 읽을거리 외에도 볼거리, 들을 거리가 있다. 그림을 좋아하는 20대 아들이 레트로 풍으로 삽화를 그렸다.가히 20대와 50대인 모자 합작인 셈이다. 이에 책을 읽으면서 6, 70년대 풍경을 엿볼 수 있는 삽화와 추억 가득한 글을 동시에 감상할 수 있다. 
+ 지금 우리는 먹거리, 입을 거리가 넘쳐나는 세상에 살고 있다. 몇십 년 전만 해도 우리에게 ‘모자람’은 일상이었다. 공책은 겉표지 안쪽까지 줄 쳐서 사용하고, 몽당연필은 볼펜 자루에 끼워 사용하는 억척을 부렸다. 그땐 그런가 보다 했다. 어디에서부터가 가난인지 알지 못했다.
+ 물질이 행복을 좌우하는 건 절대빈곤을 벗어나는 순간뿐이라고 한다. 그 후로는 물질이 많아진다고 하여 행복 곡선이 사선을 마냥 그리지 않는다. 물질의 풍요는 ‘생태계 파괴’를 부르기도 한다. 그런데도 각종 미디어에선 매일 첨단 기기를 광고한다. 광고는 모두 한 지점을 향하고 있다. ‘빠르게 할 수 있고, 나 혼자서도 행복할 수 있다’라는 것이다. 
+
+ 추억이 있어서 그립고 함께할 수 있어서 다행이다.
+
+ 혼술, 혼밥이 유행이다. 혼자서 먹는 밥이 진짜로 좋을까. 예전엔 ‘여럿’이어서 좋은 점이 많았다. 집에 불이 나면 이웃이 달려와서 바가지로 불을 끄고, 입맛이 없으면 동네방네 이웃을 불러 모아 양푼에 밥을 쓱쓱 비벼 먹었다. 그때 우릴 행복하게 한 건 무엇이었나. 그저 밥 한 덩이에 얹은 '따뜻함'과 이웃의 함께 하는 정이었다. 헐렁한 홑겹 이불에 두둑이 쑤셔 넣은 솜뭉치럼 따뜻하다. 그땐 그게 따뜻한 건지도 몰랐다. 
+ 사람 사이 온도가 많이 내려갔다. 가뜩이나 ‘거리 두기’로 더 식혀야 할 판이다. 그리고 우리가 사는 세상은 무엇이든 진짜 빨리 변한다. 이렇듯 온도나 속도에 치일 땐, 저자는 이 원고를 집필했다. 그러면 빛바랜 기억들이 촤~르~륵 살아나 ‘맞아. 그땐 그랬었지. 그게 참 불편했는데. 그래도 참 즐거웠어. 별거 없어도 뭐가 그렇게 즐거웠는지.’ 회상하는 것만으로도 가슴이 넉넉해졌다. 
+ 여름밤이면 가족끼리 밤하늘의 별을 헤아리면서 나누던 소박한 대화들, 골목길 담장에 벽돌로 써 놓은 낙서들, 공터에서 날리던 누런 흙먼지의 냄새. 이 모든 것이 지금은 사라져서일까. 지난 추억이 모두 눈물 나게 그립다. 그 그리움을 모아 책을 냈다.
+ ‘달고나’라고 발음하는 순간 달큼한 향내가 코를 간질인다. ‘이발소 그림’ 하면 순박했던 장면들이 떠올라 눈이 스르르 감는다. 누군가는 ‘그깟 추억 타령’이냐고 할 것이다. 저자는 말한다. 우리에겐 ‘그깟 따뜻함’이 꼭 필요하다고. 이 책을 읽고 나서 우리에게서 조금 더 사람 냄새가 나지 않을까 기대해 본다.
+ 힘들 때, 견딜 수 있는 아름다운 추억이 있어서 참 다행이다. 그래도 과거보다는 지금이 나아졌다고 생각할 수 있어서 행복하다. 과거는 이렇게 여러모로 쓰인다. 눈물이 나도록 과거가 그립지만 참을 수 있다. 그리고 나의 가슴을 따뜻하게 데워줄 과거를 만들기 위해, 오늘을 또 흥겹게 생활해야 하겠다.</div>
+        <button class="lib-btn" onclick="openLibSheet(&#39;9791190301190&#39;,&#39;달고나와 이발소 그림&#39;)">🏛️ 도서관 대출 현황 확인</button>
+        <button class="borrow-btn">
+          📖 내 대출 목록에 추가
+        </button>
+      </div>
+      </div>
+      <div class="section-group">
+        <div class="section-label">📖 소설</div>
+        
+      <div class="book-card" data-isbn="9788965820475" data-title="한국단편소설 40">
+        <div class="book-top">
+          <img class="book-cover" src="./신트리 도서관 큐레이션_files/32464085861.20260331102725.jpg" alt="한국단편소설 40 표지" loading="lazy">
+          <div class="book-meta">
+            
+            <div class="book-title">한국단편소설 40</div>
+            <div class="book-author">김동인</div>
+          </div>
+        </div>
+        <div class="hook-sentence">“‘인물 관계도’를 추가한 개정 증보판.”</div>
+        <div class="qa-list">
+      <div class="qa-item">
+        <div class="qa-q">🙋 “넷플릭스나 드라마로 나올 것 같은 분위기인가요?”</div>
+        <div class="qa-a">📚 읽으면서 "이거 영상화하면 대박인데"라는 생각이 들어요. "‘인물 관계도’를 추가한 개정 증보판"가 눈앞에 그려지거든요 🎬</div>
+      </div>
+      <div class="qa-item">
+        <div class="qa-q">🙋 “결말이 해피엔딩인가요?”</div>
+        <div class="qa-a">📚 마지막 페이지를 덮고 한동안 멍하게 있게 만드는 결말이에요. 좋은 소설이 꼭 해피엔딩일 필요는 없잖아요 ✨</div>
+      </div></div>
+        <div class="tag-list"><span class="tag">#소설</span><span class="tag">#한국소설</span><span class="tag">#감동</span></div>
+        
+        <button class="desc-toggle" aria-expanded="false">
+          📄 책 소개 보기 <span class="desc-arrow">▼</span>
+        </button>
+        <div class="book-desc-content">‘인물 관계도’를 추가한 개정 증보판! 최다 편수, 전문 수록! 
+한 권으로 읽는 국어 교과서 소설의 모든 것!
+
+『한국단편소설 40』은 엄선된 작품과 충실한 해설로 청소년은 물론 성인들로부터도 뜨거운 사랑을 받아 왔다. 중고등학교 교과서와 교육 과정에 꼭 포함되는 필독 작품을 선정했고, 수능·논술·내신을 위해 충실한 작품 해설을 실었다. 한 권에 가장 많은 40편의 작품을 수록하면서도 전문을 실어 완전한 감상을 할 수 있도록 했다. 작품 선정에는 문학 교과서 수록 빈도, 문학사적 의의, 예술성을 기준으로 삼았다. 이번에 개정한 『한국단편소설 40』에는 작품 줄거리를 한눈에 알아볼 수 있는 ‘인물 관계도’를 더해 내용을 더욱 쉽게 이해할 수 있다. 
+
+논술이 대학 입학의 중요한 요소가 되면서 문학은 이제 교양을 넘어서 필수 과목이 되었다. 이 책에는 살아가는 동안 꼭 읽어야 할 한국 단편 소설들이 수록되어 있으므로 청소년은 물론 성인도 필독 작품 목록으로 삼을 수 있을 것이다. 『한국단편소설 40』에 이어 30편을 추가한 『한국단편소설 70』은 더욱 완벽한 한국 단편 소설 목록을 구성할 것이다. 리베르의 ‘중고생이 꼭 읽어야 할 문학 필독서 시리즈’를 통해 한국고전소설·세계단편소설·한국대표수필 등 문학의 모든 것을 만날 수 있다. 
+
+▶ 이 책은 2005년에 출간된 《한국단편소설 35》(리베르)의 개정판입니다.</div>
+        <button class="lib-btn" onclick="openLibSheet(&#39;9788965820475&#39;,&#39;한국단편소설 40&#39;)">🏛️ 도서관 대출 현황 확인</button>
+        <button class="borrow-btn">
+          📖 내 대출 목록에 추가
+        </button>
+      </div>
+      <div class="book-card" data-isbn="9791112160652" data-title="빌딩숲의 참새">
+        <div class="book-top">
+          <img class="book-cover" src="./신트리 도서관 큐레이션_files/59416955194.20260327124355.jpg" alt="빌딩숲의 참새 표지" loading="lazy">
+          <div class="book-meta">
+            
+            <div class="book-title">빌딩숲의 참새</div>
+            <div class="book-author">정병연</div>
+          </div>
+        </div>
+        <div class="hook-sentence">“빌딩숲의 참새, 지금 신트리에서 만나보세요.”</div>
+        <div class="qa-list">
+      <div class="qa-item">
+        <div class="qa-q">🙋 “주인공이 어떤 인물인가요?”</div>
+        <div class="qa-a">📚 이 소설의 주인공은 한 마디로 정의하기 어려운 인물이에요. 읽으면서 "나랑 비슷한 것 같기도 하고" 싶다가도 전혀 다르기도 해요. 그래서 기억에 오래 남아요 🎭</div>
+      </div>
+      <div class="qa-item">
+        <div class="qa-q">🙋 “두 번 읽어볼 만한 소설인가요?”</div>
+        <div class="qa-a">📚 두 번째 읽으면 처음에 놓쳤던 것들이 보여요. 작가가 숨겨놓은 것들이 있거든요. 다시 읽고 싶어지는 소설이에요 🔍</div>
+      </div></div>
+        <div class="tag-list"><span class="tag">#소설</span><span class="tag">#장편소설</span><span class="tag">#빠져드는</span></div>
+        
+        <button class="lib-btn" onclick="openLibSheet(&#39;9791112160652&#39;,&#39;빌딩숲의 참새&#39;)">🏛️ 도서관 대출 현황 확인</button>
+        <button class="borrow-btn">
+          📖 내 대출 목록에 추가
+        </button>
+      </div>
+      </div>
+      <div class="section-group">
+        <div class="section-label">💡 자기계발</div>
+        
+      <div class="book-card" data-isbn="9791192372242" data-title="처세술">
+        <div class="book-top">
+          <img class="book-cover" src="./신트리 도서관 큐레이션_files/35419849635.20260331110132.jpg" alt="처세술 표지" loading="lazy">
+          <div class="book-meta">
+            
+            <div class="book-title">처세술</div>
+            <div class="book-author">김형인</div>
+          </div>
+        </div>
+        <div class="hook-sentence">“최고의 개그맨에서 나락으로,
+다시 유튜브로 복귀해 27만 구독자까지
+“깨달음이나 배움 ...”</div>
+        <div class="qa-list">
+      <div class="qa-item">
+        <div class="qa-q">🙋 “철학책인데 어렵지 않나요?”</div>
+        <div class="qa-a">📚 "최고의 개그맨에서 나락으로," — 학술적이지 않아요. 일상의 언어로 삶의 질문을 던지는 책이에요. 철학 몰라도 읽다 보면 자꾸 생각하게 만들어요 💭</div>
+      </div>
+      <div class="qa-item">
+        <div class="qa-q">🙋 “요즘 같은 불확실한 시대에 이 책을 읽어야 하는 이유가 있나요?”</div>
+        <div class="qa-a">📚 "어떻게 살아야 하지?"라는 질문이 많은 요즘, 이 책은 답을 주는 게 아니라 더 좋은 질문을 하도록 도와줘요 ✨</div>
+      </div></div>
+        <div class="tag-list"><span class="tag">#자기계발</span><span class="tag">#성장</span><span class="tag">#동기부여</span></div>
+        
+        <button class="desc-toggle" aria-expanded="false">
+          📄 책 소개 보기 <span class="desc-arrow">▼</span>
+        </button>
+        <div class="book-desc-content">최고의 개그맨에서 나락으로,
+다시 유튜브로 복귀해 27만 구독자까지
+“깨달음이나 배움 같은 건 좋은 것에서 오지 않는다.
+배신이나 아픔을 통해서만 오더라.”
+
+그 누구도 나를 믿어주지 않을 때 멘탈 똑바로 붙잡고 세상에 맞서는
+인생 최고 최상의 실전 처세술
+
+SBS 공채 7기, ‘웃찾사’를 통해 그야말로 대한민국 최고 개그맨이 된 김형인의 첫 책. 최고 전성기를 누린 시기보다 개그맨 노예계약 폭로, 불법 도박장 개설 혐의 등 나락으로 떨어진 시간이 더 길었다. 갈등과 오해는 이미 풀었고, 혐의와 의혹은 진실이 아님이 밝혀졌지만 세상 사람들의 편견 어린 시선은 계속되었다. 하지만 그럴 때조차 스스로 개그맨임을 잊지 않았다. 세상이 자신을 조폭으로 생각하면 조폭 캐릭터를 만들어 웃겼고, 도박꾼으로 생각하면 도박 웹드라마를 만들어 보여줬다. 유튜브 LH플렉스 채널은 27만 구독자를 모으며 인기를 모으고 있다.
+저자는 수많은 의혹과 논란을 겪으며 오히려 멘탈은 더 강해지고 세상을 더 잘 알게 되었다고 말한다.</div>
+        <button class="lib-btn" onclick="openLibSheet(&#39;9791192372242&#39;,&#39;처세술&#39;)">🏛️ 도서관 대출 현황 확인</button>
+        <button class="borrow-btn">
+          📖 내 대출 목록에 추가
+        </button>
+      </div>
+      <div class="book-card" data-isbn="9788998302658" data-title="카톡명언 15">
+        <div class="book-top">
+          <img class="book-cover" src="./신트리 도서관 큐레이션_files/32436264672.20260331103100.jpg" alt="카톡명언 15 표지" loading="lazy">
+          <div class="book-meta">
+            
+            <div class="book-title">카톡명언 15</div>
+            <div class="book-author">전준상</div>
+          </div>
+        </div>
+        <div class="hook-sentence">“출퇴근 시간으로 띄우는 전준상의 『카톡 명언』 제15권.”</div>
+        <div class="qa-list">
+      <div class="qa-item">
+        <div class="qa-q">🙋 “이 책 한 권으로 충분한가요?”</div>
+        <div class="qa-a">📚 이 책에서 배운 것만 제대로 실천해도 충분해요. 읽고 나서 실천하는 시간이 필요하거든요 📚</div>
+      </div>
+      <div class="qa-item">
+        <div class="qa-q">🙋 “슬럼프 때 읽으면 도움이 될까요?”</div>
+        <div class="qa-a">📚 딱 맞는 책이에요. "출퇴근 시간으로 띄우는 전준상의 『카톡 명언』 제15권" — "나만 힘든 게 아니었구나"에서 시작해서 "이렇게 해볼 수 있겠다"로 이어지는 흐름이에요 💪</div>
+      </div></div>
+        <div class="tag-list"><span class="tag">#자기계발</span><span class="tag">#목표</span><span class="tag">#실천</span></div>
+        
+        <button class="desc-toggle" aria-expanded="false">
+          📄 책 소개 보기 <span class="desc-arrow">▼</span>
+        </button>
+        <div class="book-desc-content">출퇴근 시간으로 띄우는 전준상의 『카톡 명언』 제15권. 크게 13장으로 나뉜 이 책은 가족, 여행, 사랑, 운명/만남/인연, 노력/처세/언어, 겸손/칭찬/감사 등으로 구성되어 있다.</div>
+        <button class="lib-btn" onclick="openLibSheet(&#39;9788998302658&#39;,&#39;카톡명언 15&#39;)">🏛️ 도서관 대출 현황 확인</button>
+        <button class="borrow-btn">
+          📖 내 대출 목록에 추가
+        </button>
+      </div>
+      </div>
+      <div class="section-group">
+        <div class="section-label">🎁 이번 주 보너스 픽<span class="bonus-pill">BONUS</span></div>
+        
+      <div class="book-card" data-isbn="9788962478518" data-title="우리는 언제나 다시 만나">
+        <div class="book-top">
+          <img class="book-cover" src="./신트리 도서관 큐레이션_files/32455538744.20260331112613.jpg" alt="우리는 언제나 다시 만나 표지" loading="lazy">
+          <div class="book-meta">
+            
+            <div class="book-title">우리는 언제나 다시 만나</div>
+            <div class="book-author">윤여림</div>
+          </div>
+        </div>
+        <div class="hook-sentence">“사랑하는 나의 아이야, 우리는 언제나 다시 만나.”</div>
+        <div class="qa-list">
+      <div class="qa-item">
+        <div class="qa-q">🙋 “읽고 나서 마음이 정말 가벼워지나요?”</div>
+        <div class="qa-a">📚 가벼워진다기보다 정리되는 느낌이에요. 복잡했던 감정이 언어가 되면 조금 견딜 수 있어지거든요. 그게 이 책이 주는 선물이에요 ✨</div>
+      </div>
+      <div class="qa-item">
+        <div class="qa-q">🙋 “상담받기 전에 읽어보기 좋은 책인가요?”</div>
+        <div class="qa-a">📚 내 감정을 먼저 정리하는 데 도움이 돼요. "내가 지금 뭘 힘들어하는지" 언어화하는 과정을 이 책이 도와줘요 📝</div>
+      </div></div>
+        <div class="tag-list"><span class="tag">#화제작</span><span class="tag">#베스트셀러</span><span class="tag">#추천도서</span></div>
+        
+        <button class="desc-toggle" aria-expanded="false">
+          📄 책 소개 보기 <span class="desc-arrow">▼</span>
+        </button>
+        <div class="book-desc-content">사랑하는 나의 아이야, 우리는 언제나 다시 만나!
+
+감동적인 한 통의 편지 같은 아름다운 윤여림 작가의 글과 《수박 수영장》의 안녕달 작가의 따뜻하고 정겨운 그림이 빚어낸 그림책 『우리는 언제나 다시 만나』. 아이가 성장하면서 겪는 자연스러운 과정, ‘분리 불안’에 대한 이야기를 담은 가슴 따뜻한 그림책입니다. 엄마가 사라지면 아이가 울면서 불안함을 표현하는 것을 ‘분리 불안’이라고 합니다. 아이마다 시기나 정도의 차이는 있지만, 대부분 2~3세 때 엄마에 대한 애착이 무척 강했다가 차츰 나아져서 친구와도 어울리고, 유치원에도 다니게 됩니다.
+
+부모의 보살핌이 절대적으로 필요한 영유아기를 지나면, 아이는 차츰 자기주도성이 생기고 혼자 하는 일들이 많아집니다. 또 청소년기를 지나면 아이의 독립성은 더욱 커지고, 오롯이 한 인간으로 독립하는 순간도 찾아옵니다. 오히려 그 과정에서 아이에게 절대적 사랑을 퍼붓던 부모는 조금씩 서운함과 허전함을 느끼게 되는데, 이때 아이뿐 아니라 부모도 성장합니다. 아이가 한 뼘 자���면, 부모도 한 뼘 자라게 되지요.
+
+지금 끊임없이 엄마를 찾는 유아기 아이의 엄마뿐 아니라, 앞으로 태어날 아이를 기다리는 예비 엄마, 어느덧 아이가 자라서 곧 떠나보내야 할 청소년기 아이의 엄마까지 모든 엄마가 사랑하는 아이에게 들려주고 싶은 따뜻한 사랑과 힘찬 응원을 담은 이 책은 아이와 부모 모두 건강하게 분리 불안을 극복하고 서로 자유롭게 사는 모습을 보여주면서, 아이와 부모의 행복하고 아름다운 성장을 응원합니다.</div>
+        <button class="lib-btn" onclick="openLibSheet(&#39;9788962478518&#39;,&#39;우리는 언제나 다시 만나&#39;)">🏛️ 도서관 대출 현황 확인</button>
+        <button class="borrow-btn">
+          📖 내 대출 목록에 추가
+        </button>
+      </div>
+      </div>
+
+      <!-- CTA 버튼 -->
+      <div class="library-cta">
+        <a class="library-btn" href="https://lib.ice.go.kr/shintree/intro/search/index.do?menu_idx=285" target="_blank">
+          <span>📚</span> 도서관에서 검색하기
+        </a>
+        <div class="library-btn-sub">신트리 도서관 · 인천 부평구</div>
+      </div>
+
+      <!-- 명언 (curator-note 대체) -->
+      <div class="quote-card">
+        <div class="quote-label">📖 이 주의 문장</div>
+        <div class="quote-text">“오늘 책 한 쪽을 읽지 않은 사람은, 내일 한 발짝 뒤처진다.”</div>
+        
+      </div>
+
+      <!-- 푸터 -->
+      <div class="footer">
+        <div class="footer-date">📅 2026-05-22 · 신트리 도서관</div>
+        <div class="footer-tags">#신트리도서관 #주간큐레이션 #부평도서관 #책추천 #독서</div>
+      </div></div>
+
+  <!-- 히스토리 바텀시트 -->
+  <div class="sheet-backdrop" id="history-backdrop"></div>
+  <div class="sheet" id="history-sheet" role="dialog" aria-label="큐레이션 히스토리">
+    <div class="sheet-handle"></div>
+    <div class="sheet-title">📋 큐레이션 히스토리</div>
+    <div class="sheet-body" id="history-body">
+      <div style="color:#8B95A1;font-size:13px;text-align:center;padding:40px 0">불러오는 중...</div>
+    </div>
+  </div>
+
+  <!-- 도서관 확인 바텀시트 -->
+  <div class="sheet-backdrop" id="lib-backdrop"></div>
+  <div class="sheet" id="lib-sheet" role="dialog" aria-label="도서관 대출 현황">
+    <div class="sheet-handle"></div>
+    <div class="sheet-title">🏛️ 도서관 대출 현황</div>
+    <div class="sheet-body" id="lib-sheet-body"></div>
+  </div>
+
+  <!-- 새로고침 FAB -->
+  <button class="fab" id="fab" aria-label="새로고침">
+    <span class="fab-icon" id="fab-icon">↻</span>
+  </button>
+
+  <!-- AI 생성 상태 토스트 -->
+  <div class="ai-toast" id="ai-toast"></div>
+
+  <script>
+  /* ─────────────────────────────────────────────────────────
+     신트리 큐레이션 — SPA + PWA
+  ───────────────────────────────────────────────────────── */
+
+  /* ── Service Worker 등록 ──────────────────────────── */
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('/sw.js').catch(() => {});
+  }
+
+  /* ── 명언 풀 (36개 — vol 번호로 순환, 매 큐레이션마다 다른 문장) ── */
+  const QUOTES = [
+    { text: "책을 읽는 것은 타인의 뇌를 빌리는 것이다.", author: "쇼펜하우어" },
+    { text: "한 권의 책은 한 번도 가본 적 없는 곳으로 가는 여권이다.", author: "마크 트웨인" },
+    { text: "독서는 완성된 사람을 만들고, 토론은 준비된 사람을 만든다.", author: "프랜시스 베이컨" },
+    { text: "오늘 읽는 한 줄이, 내일의 나를 다르게 만든다.", author: "" },
+    { text: "좋은 책을 읽는 것은 훌륭한 사람들과 대화하는 것이다.", author: "르네 데카르트" },
+    { text: "The more that you read, the more things you will know.", author: "Dr. Seuss" },
+    { text: "책은 우리에게 소리 없이 말을 건넨다.", author: "볼테르" },
+    { text: "삶이 지루해질 때, 책이 새로운 문을 열어준다.", author: "" },
+    { text: "오늘의 독자가 내일의 지도자다.", author: "마가렛 풀러" },
+    { text: "읽지 않은 책은 열지 않은 문과 같다.", author: "" },
+    { text: "책 속에 길이 있다.", author: "" },
+    { text: "A reader lives a thousand lives before he dies.", author: "조지 R. R. 마틴" },
+    { text: "책은 침묵하지만, 아무것도 침묵하지 않는다.", author: "아나톨 프랑스" },
+    { text: "당신이 읽지 않은 책이 바로 당신에게 필요한 책이다.", author: "" },
+    { text: "가장 오래된 친구는 책이다.", author: "어니스트 헤밍웨이" },
+    { text: "책은 마음의 약이다.", author: "아리스토텔레스" },
+    { text: "천 권의 책을 읽어라. 그러면 천 명의 스승을 만나게 된다.", author: "" },
+    { text: "책 한 권이 인생을 바꿀 수 있다.", author: "" },
+    { text: "독서는 단지 아는 것을 늘리는 게 아니라, 느끼는 법을 배우는 것이다.", author: "" },
+    { text: "오늘 책 한 쪽을 읽지 않은 사람은, 내일 한 발짝 뒤처진다.", author: "" },
+    { text: "세상에 나쁜 독자는 없다. 아직 맞는 책을 못 만난 독자만 있을 뿐이다.", author: "" },
+    { text: "이야기는 끝나도 그 여운은 오래 남는다.", author: "" },
+    { text: "좋은 책은 오래된 친구처럼 오래도록 곁에 있어준다.", author: "" },
+    { text: "독서는 꿈꾸는 것을 허락한다.", author: "" },
+    { text: "문장은 짧아도 생각은 깊게 남는다.", author: "" },
+    { text: "읽는 사람이 세상을 바꾼다.", author: "" },
+    { text: "좋은 문장을 만나는 것은 좋은 사람을 만나는 것과 같다.", author: "" },
+    { text: "No matter how busy you may think you are, you must find time for reading.", author: "데모스테네스" },
+    { text: "책을 읽는 시간은 결코 낭비되는 시간이 아니다.", author: "" },
+    { text: "삶이 고될수록, 책이 더 빛난다.", author: "" },
+    { text: "글을 읽는 것은 수천 명의 삶을 사는 것이다.", author: "" },
+    { text: "책은 조용히 말하지만 가장 오래 기억된다.", author: "" },
+    { text: "책 한 권을 읽는 것은 세상 하나를 여는 것이다.", author: "" },
+    { text: "소설은 인간이 발명한 가장 위대한 공감 기계다.", author: "이언 매큐언" },
+    { text: "당신의 오늘 독서가 당신의 내일을 만든다.", author: "" },
+    { text: "책을 읽지 않는 사람은 책을 읽을 수 없는 사람보다 나을 게 없다.", author: "마크 트웨인" },
+  ];
+
+  /* vol 번호 기반으로 명언 선택 — 새 큐레이션마다 다른 문장 */
+  function getQuoteByVol(vol) {
+    const n = parseInt((vol || '').match(/(\d+)\s*$/)?.[1] || '0', 10);
+    return QUOTES[n % QUOTES.length];
+  }
+
+  /* ── 대출 상태 관리 (localStorage) ──────────────── */
+  const STORAGE_KEY = 'shintree_borrowed_v1';
+
+  function loadBorrowed() {
+    try { return new Set(JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]')); }
+    catch { return new Set(); }
+  }
+  function saveBorrowed(set) {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify([...set]));
+  }
+
+  let borrowed = loadBorrowed();
+
+  // 이벤트 위임: 책 소개 토글
+  document.addEventListener('click', e => {
+    const toggle = e.target.closest('.desc-toggle');
+    if (!toggle) return;
+    const content = toggle.nextElementSibling;
+    if (!content || !content.classList.contains('book-desc-content')) return;
+    const isOpen = content.classList.toggle('visible');
+    toggle.classList.toggle('open', isOpen);
+    toggle.setAttribute('aria-expanded', isOpen);
+    toggle.childNodes[0].textContent = isOpen ? '📄 책 소개 닫기 ' : '📄 책 소개 보기 ';
+  });
+
+  // 이벤트 위임: 대출 버튼 클릭
+  document.addEventListener('click', e => {
+    const btn = e.target.closest('.borrow-btn');
+    if (!btn) return;
+    const card = btn.closest('.book-card');
+    if (!card) return;
+    const isbn = card.dataset.isbn;
+    if (!isbn) return;
+
+    const isBorrowed = borrowed.has(isbn);
+    if (isBorrowed) {
+      borrowed.delete(isbn);
+      card.classList.remove('borrowed');
+      btn.classList.remove('checked');
+      btn.textContent = '📖 내 대출 목록에 추가';
+    } else {
+      borrowed.add(isbn);
+      card.classList.add('borrowed');
+      btn.classList.add('checked');
+      btn.textContent = '✅ 내 대출 목록에 있음';
+    }
+    saveBorrowed(borrowed);
+    syncBorrowedBar();
+  });
+
+  function syncBorrowedBar() {
+    const bar = document.getElementById('borrowed-bar');
+    if (!bar) return;
+    const n = borrowed.size;
+    if (n > 0) {
+      bar.className = 'borrowed-bar visible';
+      bar.innerHTML = `📌 내 대출 목록에 <strong>${n}권</strong> 추가됨`;
+    } else {
+      bar.className = 'borrowed-bar';
+    }
+  }
+
+  /* ── HTML 이스케이프 ──────────────────────────────── */
+  function esc(str) {
+    if (typeof str !== 'string') return '';
+    return str
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#x27;');
+  }
+
+  /* ── 렌더링 ──────────────────────────────────────── */
+  const BADGE_CLASS = {
+    green:  'badge-green',
+    yellow: 'badge-yellow',
+    blue:   'badge-blue',
+    gray:   'badge-gray',
+  };
+
+  const SHINTREE_SEARCH = 'https://lib.ice.go.kr/shintree/intro/search/index.do?menu_idx=285&searchKeyWord=';
+
+  const BADGE_MAP = { green:'badge-green', yellow:'badge-yellow', blue:'badge-blue', gray:'badge-gray' };
+
+  function renderBook(book) {
+    const isbn       = book.isbn13 || '';
+    const isBorrowed = borrowed.has(isbn);
+    const avail      = book.availability || {};
+
+    const coverHtml = book.coverUrl
+      ? `<img class="book-cover" src="${esc(book.coverUrl)}" alt="${esc(book.title)} 표지" loading="lazy">`
+      : `<div class="book-cover-placeholder">📚</div>`;
+
+    // 실제 대출현황 뱃지가 있을 때만 표시 (없으면 비움)
+    const badgeHtml = avail.badge
+      ? `<span class="book-badge ${BADGE_MAP[avail.color] || 'badge-gray'}">${esc(avail.badge)}</span>`
+      : '';
+
+    const qaHtml = (book.qa || []).map(({ q, a }) => `
+      <div class="qa-item">
+        <div class="qa-q">🙋 &ldquo;${esc(q)}&rdquo;</div>
+        <div class="qa-a">📚 ${esc(a)}</div>
+      </div>`).join('');
+
+    const tagsHtml = (book.tags || []).map(t =>
+      `<span class="tag">${esc(t)}</span>`).join('');
+
+    const libBtnHtml = isbn
+      ? `<button class="lib-btn" onclick="openLibSheet('${esc(isbn)}','${esc(book.title).replace(/'/g,"\\'")}')">🏛️ 도서관 대출 현황 확인</button>`
+      : '';
+
+    return `
+      <div class="book-card${isBorrowed ? ' borrowed' : ''}" data-isbn="${esc(isbn)}" data-title="${esc(book.title)}">
+        <div class="book-top">
+          ${coverHtml}
+          <div class="book-meta">
+            ${badgeHtml}
+            <div class="book-title">${esc(book.title)}</div>
+            <div class="book-author">${esc(book.author)}</div>
+          </div>
+        </div>
+        <div class="hook-sentence">&ldquo;${esc(book.hookSentence)}&rdquo;</div>
+        <div class="qa-list">${qaHtml}</div>
+        <div class="tag-list">${tagsHtml}</div>
+        ${book.description ? `
+        <button class="desc-toggle" aria-expanded="false">
+          📄 책 소개 보기 <span class="desc-arrow">▼</span>
+        </button>
+        <div class="book-desc-content">${esc(book.description)}</div>` : ''}
+        ${libBtnHtml}
+        <button class="borrow-btn${isBorrowed ? ' checked' : ''}">
+          ${isBorrowed ? '✅ 내 대출 목록에 있음' : '📖 내 대출 목록에 추가'}
+        </button>
+      </div>`;
+  }
+
+  function renderSection(key, section) {
+    const isBonus   = key === 'bonus';
+    const labelHtml = isBonus
+      ? `${esc(section.label)}<span class="bonus-pill">BONUS</span>`
+      : esc(section.label);
+    const booksHtml = (section.books || []).map(renderBook).join('');
+    return `
+      <div class="section-group">
+        <div class="section-label">${labelHtml}</div>
+        ${booksHtml}
+      </div>`;
+  }
+
+  /* ── [제거됨] 3D 클레이 일러스트 — 사용 안 함 ── */
+  function getConceptIllustration_UNUSED(concept) {
+    const title  = (concept.title  || '').toLowerCase();
+    const emoji  = concept.emoji   || '';
+
+    // 테마 감지
+    const isWinter  = /❄|⛄|눈|겨울|cold|winter/.test(emoji + title);
+    const isAutumn  = /🍂|🍁|가을|autumn|fall/.test(emoji + title);
+    const isSummer  = /☀|🌞|여름|summer|hot/.test(emoji + title);
+    const isSpring  = !isWinter && !isAutumn && !isSummer; // 기본: 봄/자연
+
+    // 컬러 팔레트
+    const P = isWinter ? {
+      bg1:'#E8F4FC', bg2:'#F5FAFF', bg3:'#EAF6FF',
+      bokeh1:'#C8E0F0', bokeh2:'#D8ECF8',
+      body1:'#D0DCF0', body2:'#B8CCEE',
+      float1:'#C8E4F8', float2:'#D0F0FF',
+    } : isAutumn ? {
+      bg1:'#FDF0E4', bg2:'#FBF5EE', bg3:'#FFF8EC',
+      bokeh1:'#F0D0A8', bokeh2:'#EEC8A0',
+      body1:'#E8CCA0', body2:'#D4B488',
+      float1:'#F0A868', float2:'#E8C870',
+    } : isSummer ? {
+      bg1:'#FEFCE4', bg2:'#F5FBE8', bg3:'#FFF9E0',
+      bokeh1:'#D8F0A8', bokeh2:'#E8F8C0',
+      body1:'#C8E880', body2:'#B0D468',
+      float1:'#F8E044', float2:'#A8E070',
+    } : { // 봄 (기본)
+      bg1:'#EAF8F2', bg2:'#F3FBF7', bg3:'#FFF2E8',
+      bokeh1:'#D4EEE4', bokeh2:'#EED4F0',
+      body1:'#DEC8F0', body2:'#CAACE0',
+      float1:'#FFB3CC', float2:'#FFD4A0',
+    };
+
+    return `
+<svg viewBox="0 0 480 280" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+<defs>
+  <radialGradient id="ilBg" cx="45%" cy="42%" r="72%">
+    <stop offset="0%"   stop-color="${P.bg1}"/>
+    <stop offset="55%"  stop-color="${P.bg2}"/>
+    <stop offset="100%" stop-color="${P.bg3}"/>
+  </radialGradient>
+  <!-- 클레이 피부 (따뜻한 복숭아) -->
+  <radialGradient id="ilSkin" cx="38%" cy="30%" r="64%">
+    <stop offset="0%"   stop-color="#FFE4CC"/>
+    <stop offset="70%"  stop-color="#FFC098"/>
+    <stop offset="100%" stop-color="#F5A878"/>
+  </radialGradient>
+  <!-- 클레이 몸통 (소프트 라벤더) -->
+  <radialGradient id="ilBody" cx="36%" cy="28%" r="64%">
+    <stop offset="0%"   stop-color="${P.body1}"/>
+    <stop offset="100%" stop-color="${P.body2}"/>
+  </radialGradient>
+  <!-- 클레이 머리카락 (웜 그레이) -->
+  <radialGradient id="ilHair" cx="35%" cy="28%" r="66%">
+    <stop offset="0%"   stop-color="#DDD4CC"/>
+    <stop offset="100%" stop-color="#BCB0A8"/>
+  </radialGradient>
+  <!-- 꽃잎 핑크 -->
+  <radialGradient id="ilPetal1" cx="40%" cy="38%" r="60%">
+    <stop offset="0%"   stop-color="#FFD8E8"/>
+    <stop offset="100%" stop-color="${P.float1}"/>
+  </radialGradient>
+  <!-- 꽃잎 크림 -->
+  <radialGradient id="ilPetal2" cx="40%" cy="38%" r="60%">
+    <stop offset="0%"   stop-color="#FFF4D8"/>
+    <stop offset="100%" stop-color="${P.float2}"/>
+  </radialGradient>
+  <!-- 소프트 섀도 필터 -->
+  <filter id="ilShd" x="-28%" y="-28%" width="156%" height="156%">
+    <feDropShadow dx="0" dy="4" stdDeviation="8" flood-color="#8BAABB" flood-opacity="0.20"/>
+  </filter>
+  <filter id="ilShd2" x="-20%" y="-20%" width="140%" height="140%">
+    <feDropShadow dx="0" dy="2" stdDeviation="4" flood-color="#A0B8C0" flood-opacity="0.18"/>
+  </filter>
+</defs>
+
+<!-- ── 배경 ── -->
+<rect width="480" height="280" fill="url(#ilBg)"/>
+
+<!-- 배경 보케 원 -->
+<circle cx="405" cy="52"  r="52" fill="${P.bokeh1}" opacity="0.38"/>
+<circle cx="62"  cy="235" r="38" fill="${P.bokeh2}" opacity="0.32"/>
+<circle cx="435" cy="230" r="28" fill="${P.bg1}"    opacity="0.55"/>
+<circle cx="50"  cy="90"  r="22" fill="${P.bg3}"    opacity="0.45"/>
+
+<!-- 바닥 그림자 -->
+<ellipse cx="240" cy="268" rx="92" ry="11" fill="#90B8A8" opacity="0.16"/>
+
+<!-- ══ 캐릭터 (클레이 권태로운 인물) ══ -->
+<g class="char-breathe">
+  <!-- 하체 (앉은 포즈) -->
+  <ellipse cx="240" cy="230" rx="78" ry="46" fill="url(#ilBody)" filter="url(#ilShd)"/>
+  <!-- 상체 -->
+  <ellipse cx="240" cy="196" rx="55" ry="52" fill="url(#ilBody)" filter="url(#ilShd2)"/>
+
+  <!-- 왼팔 (무릎 위에 늘어짐) -->
+  <ellipse cx="182" cy="220" rx="26" ry="15" fill="url(#ilBody)" transform="rotate(-22 182 220)"/>
+  <!-- 오른팔 -->
+  <ellipse cx="298" cy="220" rx="26" ry="15" fill="url(#ilBody)" transform="rotate(22 298 220)"/>
+  <!-- 왼손 -->
+  <circle cx="166" cy="234" r="15" fill="url(#ilSkin)" filter="url(#ilShd2)"/>
+  <!-- 오른손 -->
+  <circle cx="314" cy="234" r="15" fill="url(#ilSkin)" filter="url(#ilShd2)"/>
+
+  <!-- 목 -->
+  <ellipse cx="240" cy="176" rx="22" ry="13" fill="url(#ilSkin)"/>
+
+  <!-- ── 머리 ── -->
+  <circle cx="240" cy="142" r="50" fill="url(#ilSkin)" filter="url(#ilShd)"/>
+
+  <!-- 머리카락 -->
+  <ellipse cx="240" cy="108" rx="48" ry="36" fill="url(#ilHair)"/>
+  <ellipse cx="200" cy="130" rx="19" ry="30" fill="url(#ilHair)"/>
+  <ellipse cx="280" cy="130" rx="19" ry="30" fill="url(#ilHair)"/>
+  <ellipse cx="237" cy="87"  rx="14" ry="17" fill="url(#ilHair)"/>
+
+  <!-- ── 표정 (권태, 반쯤 감긴 눈) ── -->
+  <!-- 왼쪽 눈 흰자 -->
+  <ellipse cx="220" cy="148" rx="9"  ry="8"  fill="#FFF8F4" opacity="0.95"/>
+  <circle  cx="220" cy="151" r="5"           fill="#3D2A20"/>
+  <circle  cx="221.5" cy="149.5" r="1.8"     fill="white" opacity="0.75"/>
+  <!-- 왼 눈꺼풀 (졸린 효과) -->
+  <path d="M 211 144 Q 220 141 229 144 Q 220 147 211 144 Z" fill="url(#ilSkin)" opacity="0.88"/>
+
+  <!-- 오른쪽 눈 흰자 -->
+  <ellipse cx="260" cy="148" rx="9"  ry="8"  fill="#FFF8F4" opacity="0.95"/>
+  <circle  cx="260" cy="151" r="5"           fill="#3D2A20"/>
+  <circle  cx="261.5" cy="149.5" r="1.8"     fill="white" opacity="0.75"/>
+  <!-- 오른 눈꺼풀 -->
+  <path d="M 251 144 Q 260 141 269 144 Q 260 147 251 144 Z" fill="url(#ilSkin)" opacity="0.88"/>
+
+  <!-- 볼 블러시 -->
+  <ellipse cx="205" cy="160" rx="14" ry="8" fill="#FFB0A0" opacity="0.35"/>
+  <ellipse cx="275" cy="160" rx="14" ry="8" fill="#FFB0A0" opacity="0.35"/>
+
+  <!-- 입 (중립/약간 처진) -->
+  <path d="M 228 170 Q 240 174 252 170" stroke="#CC8878" stroke-width="2" fill="none" stroke-linecap="round"/>
+</g>
+
+<!-- ══ 봄 플로팅 요소들 ══ -->
+
+<!-- 꽃 1 — 왼쪽 위, 핑크 (큰) -->
+<g class="fi1" transform="translate(82,72)">
+  <ellipse cx="0" cy="-15" rx="7.5" ry="12" fill="url(#ilPetal1)" transform="rotate(0)"/>
+  <ellipse cx="0" cy="-15" rx="7.5" ry="12" fill="url(#ilPetal1)" transform="rotate(72)"/>
+  <ellipse cx="0" cy="-15" rx="7.5" ry="12" fill="url(#ilPetal1)" transform="rotate(144)"/>
+  <ellipse cx="0" cy="-15" rx="7.5" ry="12" fill="url(#ilPetal1)" transform="rotate(216)"/>
+  <ellipse cx="0" cy="-15" rx="7.5" ry="12" fill="url(#ilPetal1)" transform="rotate(288)"/>
+  <circle cx="0" cy="0" r="7.5" fill="#FFE8D4"/>
+  <circle cx="-1" cy="-1" r="3" fill="#FFF4EA" opacity="0.75"/>
+</g>
+
+<!-- 꽃 2 — 오른쪽 위, 크림 (중간) -->
+<g class="fi2" transform="translate(378,86)">
+  <ellipse cx="0" cy="-12" rx="6.5" ry="10" fill="url(#ilPetal2)" transform="rotate(0)"/>
+  <ellipse cx="0" cy="-12" rx="6.5" ry="10" fill="url(#ilPetal2)" transform="rotate(72)"/>
+  <ellipse cx="0" cy="-12" rx="6.5" ry="10" fill="url(#ilPetal2)" transform="rotate(144)"/>
+  <ellipse cx="0" cy="-12" rx="6.5" ry="10" fill="url(#ilPetal2)" transform="rotate(216)"/>
+  <ellipse cx="0" cy="-12" rx="6.5" ry="10" fill="url(#ilPetal2)" transform="rotate(288)"/>
+  <circle cx="0" cy="0" r="6.5" fill="#FFE0C4"/>
+</g>
+
+<!-- 꽃 3 — 왼쪽 중간, 핑크 (작은) -->
+<g class="fi3" transform="translate(110,186)">
+  <ellipse cx="0" cy="-10" rx="5.5" ry="9" fill="url(#ilPetal1)" transform="rotate(0)"/>
+  <ellipse cx="0" cy="-10" rx="5.5" ry="9" fill="url(#ilPetal1)" transform="rotate(72)"/>
+  <ellipse cx="0" cy="-10" rx="5.5" ry="9" fill="url(#ilPetal1)" transform="rotate(144)"/>
+  <ellipse cx="0" cy="-10" rx="5.5" ry="9" fill="url(#ilPetal1)" transform="rotate(216)"/>
+  <ellipse cx="0" cy="-10" rx="5.5" ry="9" fill="url(#ilPetal1)" transform="rotate(288)"/>
+  <circle cx="0" cy="0" r="5.5" fill="#FFEEDE"/>
+</g>
+
+<!-- 꽃 4 — 오른쪽 아래 -->
+<g class="fi4" transform="translate(388,178)">
+  <ellipse cx="0" cy="-11" rx="6" ry="9.5" fill="url(#ilPetal2)" transform="rotate(0)"/>
+  <ellipse cx="0" cy="-11" rx="6" ry="9.5" fill="url(#ilPetal2)" transform="rotate(72)"/>
+  <ellipse cx="0" cy="-11" rx="6" ry="9.5" fill="url(#ilPetal2)" transform="rotate(144)"/>
+  <ellipse cx="0" cy="-11" rx="6" ry="9.5" fill="url(#ilPetal2)" transform="rotate(216)"/>
+  <ellipse cx="0" cy="-11" rx="6" ry="9.5" fill="url(#ilPetal2)" transform="rotate(288)"/>
+  <circle cx="0" cy="0" r="6" fill="#FFDEC4"/>
+</g>
+
+<!-- 잎 1 — 왼쪽 -->
+<g class="fi5" transform="translate(52,138)">
+  <ellipse cx="0" cy="-18" rx="9" ry="20" fill="#A4D8B4" opacity="0.82" transform="rotate(-28)"/>
+  <line x1="0" y1="2" x2="-1" y2="-32" stroke="#82C498" stroke-width="1.2" opacity="0.45"/>
+</g>
+
+<!-- 잎 2 — 오른쪽 -->
+<g class="fi6" transform="translate(422,132)">
+  <ellipse cx="0" cy="-18" rx="8.5" ry="19" fill="#A4D8B4" opacity="0.78" transform="rotate(30)"/>
+</g>
+
+<!-- 소구체 1 — 민트, 왼쪽 -->
+<circle class="fi7" cx="60" cy="108" r="12" fill="#98DEC4" opacity="0.68" filter="url(#ilShd2)"/>
+<!-- 소구체 2 — 핑크, 오른쪽 위 -->
+<circle class="fi8" cx="422" cy="50"  r="10" fill="#FFCCD4" opacity="0.70" filter="url(#ilShd2)"/>
+<!-- 소구체 3 — 라벤더, 오른쪽 아래 -->
+<circle class="fi9" cx="355" cy="252" r="9"  fill="#D4C4E8" opacity="0.65"/>
+<!-- 소구체 4 — 피치, 위 -->
+<circle class="fi1" cx="148" cy="48"  r="8"  fill="#FFE0B4" opacity="0.68"/>
+
+<!-- 낱 꽃잎들 (흩어지는 느낌) -->
+<ellipse class="fi3" cx="172" cy="60" rx="5" ry="8.5" fill="#FFB8CC" opacity="0.58" transform="rotate(-32 172 60)"/>
+<ellipse class="fi5" cx="322" cy="58" rx="4.5" ry="7.5" fill="#FFD0B0" opacity="0.52" transform="rotate(22 322 58)"/>
+<ellipse class="fi8" cx="152" cy="252" rx="4" ry="6.5" fill="${P.float1}" opacity="0.48" transform="rotate(48 152 252)"/>
+<ellipse class="fi2" cx="340" cy="240" rx="3.5" ry="6" fill="${P.float2}" opacity="0.45" transform="rotate(-18 340 240)"/>
+</svg>`;
+  }
+
+  let currentVol = '';  // 히스토리에서 현재 큐레이션 vol 추적
+
+  function renderApp(data) {
+    currentVol         = data.vol || '';
+    const quote        = getQuoteByVol(data.vol);
+    const sectionsHtml = Object.entries(data.sections || {})
+      .map(([key, sec]) => renderSection(key, sec))
+      .join('');
+
+    document.getElementById('app').innerHTML = `
+      <!-- 텍스트 헤더 -->
+      <div class="page-header">
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px">
+          <div style="flex:1;min-width:0">
+            <div class="header-vol">${esc(data.vol)}</div>
+            <div class="header-concept">
+              <span class="concept-emoji">${esc(data.concept.emoji)}</span> ${esc(data.concept.title)}
+            </div>
+            <div class="header-desc">${esc(data.concept.description)}</div>
+          </div>
+          <button class="history-btn" onclick="openHistorySheet()" title="지난 큐레이션 보기">📋</button>
+        </div>
+      </div>
+
+      <!-- 대출 요약 바 -->
+      <div class="borrowed-bar${borrowed.size > 0 ? ' visible' : ''}" id="borrowed-bar">
+        📌 내 대출 목록에 <strong>${borrowed.size}권</strong> 추가됨
+      </div>
+
+      <!-- 섹션 -->
+      ${sectionsHtml}
+
+      <!-- CTA 버튼 -->
+      <div class="library-cta">
+        <a class="library-btn"
+           href="https://lib.ice.go.kr/shintree/intro/search/index.do?menu_idx=285"
+           target="_blank">
+          <span>📚</span> 도서관에서 검색하기
+        </a>
+        <div class="library-btn-sub">신트리 도서관 · 인천 부평구</div>
+      </div>
+
+      <!-- 명언 (curator-note 대체) -->
+      <div class="quote-card">
+        <div class="quote-label">📖 이 주의 문장</div>
+        <div class="quote-text">&ldquo;${esc(quote.text)}&rdquo;</div>
+        ${quote.author ? `<div class="quote-author">— ${esc(quote.author)}</div>` : ''}
+      </div>
+
+      <!-- 푸터 -->
+      <div class="footer">
+        <div class="footer-date">📅 ${esc(data.publishDate)} · 신트리 도서관</div>
+        <div class="footer-tags">${esc(data.hashtags)}</div>
+      </div>`;
+
+  }
+
+
+  /* ── 바텀시트 공통 ────────────────────────────────── */
+  function openSheet(backdropId, sheetId) {
+    document.getElementById(backdropId).classList.add('open');
+    document.getElementById(sheetId).classList.add('open');
+    document.body.style.overflow = 'hidden';
+  }
+  function closeSheet(backdropId, sheetId) {
+    document.getElementById(backdropId).classList.remove('open');
+    document.getElementById(sheetId).classList.remove('open');
+    document.body.style.overflow = '';
+  }
+  document.getElementById('history-backdrop').addEventListener('click', () =>
+    closeSheet('history-backdrop', 'history-sheet'));
+  document.getElementById('lib-backdrop').addEventListener('click', () =>
+    closeSheet('lib-backdrop', 'lib-sheet'));
+
+  /* ── 히스토리 시트 ─────────────────────────────────── */
+  async function openHistorySheet() {
+    openSheet('history-backdrop', 'history-sheet');
+    const body = document.getElementById('history-body');
+    body.innerHTML = '<div style="color:#8B95A1;font-size:13px;text-align:center;padding:40px 0">불러오는 중...</div>';
+    try {
+      const res        = await fetch('/api/history');
+      const { items }  = await res.json();
+      if (!items?.length) {
+        body.innerHTML = '<div style="color:#8B95A1;font-size:13px;text-align:center;padding:40px 0">저장된 큐레이션이 없어요</div>';
+        return;
+      }
+      body.innerHTML = items.map(item => `
+        <div class="history-item${currentVol === item.vol ? ' active' : ''}"
+             onclick="loadHistoryItem('${esc(item.filename)}')">
+          <div class="history-item-emoji">${esc(item.concept?.emoji || '📚')}</div>
+          <div class="history-item-info">
+            <div class="history-item-vol">${esc(item.vol)} · ${esc(item.publishDate)}</div>
+            <div class="history-item-title">${esc(item.concept?.title || '')}</div>
+            <div class="history-item-meta">책 ${item.bookCount}권${currentVol === item.vol ? ' · 현재 보기 중' : ''}</div>
+          </div>
+          <div class="history-item-arrow">›</div>
+        </div>`).join('');
+    } catch (err) {
+      body.innerHTML = `<div style="color:#C53030;font-size:13px;text-align:center;padding:24px 0">불러오기 실패</div>`;
+    }
+  }
+
+  async function loadHistoryItem(filename) {
+    closeSheet('history-backdrop', 'history-sheet');
+    document.getElementById('app').innerHTML = `
+      <div class="loading"><div class="spinner"></div><div>불러오는 중...</div></div>`;
+    try {
+      const res  = await fetch(`/api/pool/${encodeURIComponent(filename)}`);
+      if (!res.ok) throw new Error(`서버 오류: ${res.status}`);
+      const data = await res.json();
+      renderApp(data);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    } catch (err) {
+      document.getElementById('app').innerHTML = `
+        <div class="error-card">
+          <div style="font-size:36px;margin-bottom:14px">😕</div>
+          <strong>불러오지 못했어요</strong>
+          <div style="margin-top:8px;font-size:13px;color:#718096">${esc(err.message)}</div>
+          <button onclick="loadCuration()">현재 큐레이션으로 돌아가기</button>
+        </div>`;
+    }
+  }
+
+  /* ── 도서관 확인 시트 ──────────────────────────────── */
+  async function openLibSheet(isbn13, title) {
+    const body = document.getElementById('lib-sheet-body');
+    const searchUrl = esc(SHINTREE_SEARCH + encodeURIComponent(title));
+
+    body.innerHTML = `
+      <div class="lib-check-row" style="padding-bottom:10px">
+        <div class="lib-check-label" style="font-size:13px;color:#4E5968;font-weight:500">${esc(title)}</div>
+      </div>
+      <div class="lib-check-row" id="lib-status-row">
+        <div class="lib-check-label">신트리 도서관 대출 현황</div>
+        <div class="lib-check-status gray" id="lib-status-main" style="font-size:12px">확인 중…</div>
+      </div>
+      <a class="lib-sheet-cta" href="${searchUrl}" target="_blank" rel="noopener">
+        📚 신트리 도서관에서 직접 검색하기
+      </a>`;
+    openSheet('lib-backdrop', 'lib-sheet');
+
+    try {
+      const res  = await fetch(`/api/availability?isbn13=${encodeURIComponent(isbn13)}`);
+      const data = await res.json();
+      const el   = document.getElementById('lib-status-main');
+      if (!el) return;
+
+      const REAL_STATUS = ['available', 'reserved', 'interlibrary'];
+      if (REAL_STATUS.includes(data.status)) {
+        const colorCls = { green:'green', yellow:'yellow', blue:'gray' };
+        el.textContent = data.badge || '🔗 직접 확인';
+        el.className   = `lib-check-status ${colorCls[data.color] || 'gray'}`;
+      } else {
+        // API 미승인·오류 → 솔직하게 안내
+        const row = document.getElementById('lib-status-row');
+        if (row) row.style.display = 'none';
+        const note = document.createElement('div');
+        note.style.cssText = 'font-size:12px;color:#8B95A1;text-align:center;padding:12px 0 4px;line-height:1.6';
+        note.textContent = '실시간 조회가 어려워요. 아래 버튼으로 신트리 도서관에서 직접 확인해주세요.';
+        body.insertBefore(note, body.querySelector('.lib-sheet-cta'));
+      }
+    } catch {
+      const row = document.getElementById('lib-status-row');
+      if (row) row.style.display = 'none';
+    }
+  }
+
+  /* ── 데이터 로드 ──────────────────────────────────── */
+  async function loadCuration() {
+    document.getElementById('app').innerHTML = `
+      <div class="loading">
+        <div class="spinner"></div>
+        <div>책 정보를 불러오는 중...</div>
+      </div>`;
+    try {
+      const res = await fetch('/api/curation');
+      if (!res.ok) throw new Error(`서버 오류: ${res.status}`);
+      const data = await res.json();
+      renderApp(data);
+    } catch (err) {
+      document.getElementById('app').innerHTML = `
+        <div class="error-card">
+          <div style="font-size:36px;margin-bottom:14px">😕</div>
+          <strong>큐레이션을 불러오지 못했어요</strong>
+          <div style="margin-top:8px;font-size:13px;color:#718096">${esc(err.message)}</div>
+          <button onclick="loadCuration()">다시 시도</button>
+        </div>`;
+    }
+  }
+
+  /* ── AI 토스트 헬퍼 ──────────────────────────────── */
+  function showToast(msg, durationMs = 3000) {
+    const t = document.getElementById('ai-toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    clearTimeout(t._timer);
+    t._timer = setTimeout(() => t.classList.remove('show'), durationMs);
+  }
+
+  /* ── 새로고침 ─────────────────────────────────────── */
+  document.getElementById('fab').addEventListener('click', async () => {
+    const fab  = document.getElementById('fab');
+    fab.classList.add('spinning');
+    fab.disabled = true;
+
+    showToast('🔄 새 큐레이션 불러오는 중...', 8000);
+
+    try {
+      const res = await fetch('/api/refresh', { method: 'POST' });
+      if (!res.ok) throw new Error(`서버 오류: ${res.status}`);
+      const data = await res.json();
+
+      /* 서비스워커 /api/curation 캐시도 함께 삭제 */
+      if ('caches' in window) {
+        try {
+          const cache = await caches.open('shintree-v1');
+          await cache.delete('/api/curation');
+        } catch { /* SW 미지원 환경 무시 */ }
+      }
+
+      renderApp(data);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+
+      showToast('📚 새 큐레이션으로 변경됐어요!', 3500);
+    } catch (err) {
+      showToast('❌ 새로고침 실패: ' + err.message, 4000);
+    } finally {
+      fab.classList.remove('spinning');
+      fab.disabled = false;
+    }
+  });
+
+  /* ── 초기 로드 ────────────────────────────────────── */
+  loadCuration();
+  </script>
+
+
+</body></html>
