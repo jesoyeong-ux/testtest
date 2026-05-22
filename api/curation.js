@@ -1,282 +1,257 @@
-/* ─────────────────────────────────────────────────
-   신트리 큐레이션 — Claude AI 실시간 큐레이션 생성
-   - 새로고침 시 Claude API로 즉석 큐레이션 생성
-   - 현재 계절/월/트렌드 반영
-   - pool/ 에 저장해 재사용 가능
-───────────────────────────────────────────────── */
 require('dotenv').config();
-const fs   = require('fs');
+const fs = require('fs');
 const path = require('path');
+const { searchBook } = require('./api/naver');
+const { checkBookAvailability } = require('./api/data4lib');
 
-/** 현재 날짜 기반 계절/분위기 컨텍스트 */
-function getSeasonContext() {
-  const now   = new Date();
-  const month = now.getMonth() + 1; // 1-12
-  const day   = now.getDate();
-  const year  = now.getFullYear();
-  const dateStr = `${year}-${String(month).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+const SHINTREE_SEARCH_BASE =
+  'https://lib.ice.go.kr/shintree/intro/search/index.do?menu_idx=285&searchKeyWord=';
 
-  const seasonMap = {
-    3: '봄 (새학기, 새출발, 벚꽃)',
-    4: '봄 (따뜻한 햇살, 야외활동)',
-    5: '봄 (가정의달, 어린이날, 어버이날)',
-    6: '초여름 (휴가 준비, 무더위 시작)',
-    7: '여름 (무더운 여름, 바다, 피서)',
-    8: '여름 (여름휴가, 독서의 계절)',
-    9: '가을 (독서의 계절, 풍성한 수확)',
-    10: '가을 (단풍, 깊어가는 가을)',
-    11: '늦가을 (겨울 준비, 쓸쓸한 감성)',
-    12: '겨울 (연말, 크리스마스, 한해 마무리)',
-    1:  '겨울 (새해 시작, 다짐)',
-    2:  '겨울 끝 (봄 기다림, 졸업)',
-  };
-
-  return {
-    dateStr,
-    month,
-    year,
-    season: seasonMap[month] || '봄',
-    isSpecial: getSpecialEvent(month, day),
-  };
+// HTML 이스케이프 — XSS 방지
+function escapeHtml(str) {
+  if (typeof str !== 'string') return '';
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#x27;');
 }
 
-function getSpecialEvent(month, day) {
-  if (month === 1 && day <= 3)   return '새해 첫 날';
-  if (month === 3 && day <= 10)  return '새학기 시작';
-  if (month === 5 && day >= 1 && day <= 10) return '어린이날/어버이날';
-  if (month === 12 && day >= 20) return '연말/크리스마스';
-  return null;
+const BADGE_CLASS = {
+  green: 'badge-green',
+  yellow: 'badge-yellow',
+  blue: 'badge-blue',
+  gray: 'badge-gray',
+};
+
+// 개별 검색 URL (신트리 OPAC, 제목만 사용)
+function buildSearchUrl(title) {
+  return SHINTREE_SEARCH_BASE + encodeURIComponent(title);
 }
 
-/** pool/ 폴더에서 현재 최대 vol 번호 추출 */
-function getNextVolNumber(poolDir) {
-  if (!fs.existsSync(poolDir)) return 3;
-  try {
-    const files = fs.readdirSync(poolDir).filter(f => f.endsWith('.json'));
-    let maxVol = 0;
-    for (const f of files) {
-      try {
-        const data = JSON.parse(fs.readFileSync(path.join(poolDir, f), 'utf-8'));
-        const volStr = data.vol || '';
-        const match = volStr.match(/Vol\.(\d+)/i);
-        if (match) maxVol = Math.max(maxVol, parseInt(match[1], 10));
-      } catch { /* skip */ }
-    }
-    return maxVol + 1;
-  } catch { return 3; }
+function renderBook(book, coverUrl, availability) {
+  const badge = availability?.badge ?? '🔗 신트리 확인';
+  const badgeClass = BADGE_CLASS[availability?.color ?? 'gray'];
+  const searchUrl = buildSearchUrl(book.title);
+
+  const safeTitle = escapeHtml(book.title);
+  const safeAuthor = escapeHtml(book.author);
+  const safeHook = escapeHtml(book.hookSentence);
+
+  const coverHtml = coverUrl
+    ? `<img class="book-cover" src="${escapeHtml(coverUrl)}" alt="${safeTitle} 표지" loading="lazy">`
+    : `<div class="book-cover-placeholder">📚</div>`;
+
+  const qaHtml = book.qa
+    .map(
+      ({ q, a }) => `
+      <div class="qa-item">
+        <div class="qa-q">🙋 &ldquo;${escapeHtml(q)}&rdquo;</div>
+        <div class="qa-a">📚 ${escapeHtml(a)}</div>
+      </div>`
+    )
+    .join('');
+
+  const tagsHtml = book.tags.map((t) => `<span class="tag">${escapeHtml(t)}</span>`).join('');
+
+  return `
+    <div class="book-card">
+      <div class="book-top">
+        ${coverHtml}
+        <div class="book-meta">
+          <span class="book-badge ${badgeClass}">${escapeHtml(badge)}</span>
+          <div class="book-title">${safeTitle}</div>
+          <div class="book-author">${safeAuthor}</div>
+        </div>
+      </div>
+      <div class="hook-sentence">&ldquo;${safeHook}&rdquo;</div>
+      <div class="qa-list">${qaHtml}</div>
+      <div class="tag-list">${tagsHtml}</div>
+    </div>`;
 }
 
-/** 기존 pool 도서 ISBN 목록 추출 (중복 방지용) */
-function getPoolISBNs(poolDir) {
-  const isbns = new Set();
-  if (!fs.existsSync(poolDir)) return isbns;
-  try {
-    const files = fs.readdirSync(poolDir).filter(f => f.endsWith('.json'));
-    for (const f of files) {
-      try {
-        const data = JSON.parse(fs.readFileSync(path.join(poolDir, f), 'utf-8'));
-        for (const sec of Object.values(data.sections || {})) {
-          for (const book of sec.books || []) {
-            if (book.isbn13) isbns.add(book.isbn13);
-          }
-        }
-      } catch { /* skip */ }
-    }
-  } catch { /* skip */ }
-  return isbns;
+function renderSection(key, label, booksHtml) {
+  const isBonus = key === 'bonus';
+  const labelHtml = isBonus
+    ? `${escapeHtml(label)}<span class="bonus-pill">BONUS</span>`
+    : escapeHtml(label);
+  return `
+    <div class="section-group">
+      <div class="section-label">${labelHtml}</div>
+      ${booksHtml}
+    </div>`;
 }
 
-/** AI 생성 프롬프트 구성 */
-function buildCurationPrompt(ctx, nextVol, existingISBNs) {
-  const isbnHint = existingISBNs.size > 0
-    ? `\n\n⚠️ 아래 ISBN은 이미 추천된 도서이므로 반드시 제외:\n${[...existingISBNs].join(', ')}`
-    : '';
+async function enrichBook(book) {
+  // naver-curation.js가 이미 가져온 이미지 우선 사용 (불필요한 재호출 방지)
+  let coverUrl = book._naverImage || null;
 
-  return `당신은 인천광역시교육청 신트리도서관의 주간 북큐레이터입니다.
-오늘 날짜: ${ctx.dateStr}
-현재 계절/분위기: ${ctx.season}${ctx.isSpecial ? ` / 특별한 날: ${ctx.isSpecial}` : ''}
-
-공공도서관 이용자(20~50대 성인)를 위한 이번 주 큐레이션 7권을 선정해주세요.${isbnHint}
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-📌 Q&A 작성 핵심 원칙 (가장 중요)
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Q&A는 이 큐레이션의 핵심 콘텐츠입니다. 반드시 아래를 지켜주세요.
-
-✅ 질문(Q) — 독자가 실제로 궁금해할 것:
-  · 책의 줄거리·핵심 소재·인물을 언급한 구체적 질문
-  · 최신 한국 트렌드와 연결 (예: "유튜브 알고리즘", "인스타 릴스", "요즘 드라마 OST", "워라밸", "갓생", "MZ 번아웃", "챗GPT 시대", "부동산 영끌", 수능, 육아 등)
-  · 독자의 상황과 연결 (예: "이직 고민인데", "연애가 잘 안 풀릴 때", "번아웃이 왔을 때")
-  · "읽기 쉬운가요?", "어떤 분위기인가요?" 같은 뻔한 질문 절대 금지
-
-✅ 답변(A) — 사서의 친근하고 정보 풍부한 답변:
-  · 책의 실제 내용·줄거리·핵심 주제를 구체적으로 언급
-  · 저자 배경, 출판 당시 화제, 독자 반응, 수상 경력 등 사실 기반 정보 포함
-  · 현재 사회적 트렌드(SNS, 방송, 이슈)와 자연스럽게 연결
-  · 2~4문장, 친근한 구어체, 이모지 1~2개
-  · 읽는 데 걸리는 시간이나 권수 정보도 자연스럽게 포함 가능
-
-✅ 좋은 Q&A 예시 참고:
-  Q: "제목이 너무 자극적이지 않아요?"
-  A: "그게 포인트예요. 죽고 싶다 = 사라지고 싶다 = 쉬고 싶다. 이 책은 그 감정에 이름을 붙여줘요. MZ 번아웃 시대에 읽으면 '나만 이런 게 아니었구나' 싶어요 🌙"
-
-  Q: "노벨상 받은 다음에 읽으면 다르다는 게 진짜예요?"
-  A: "진짜예요. 2024년 수상 이후 전 세계 독자들이 동시에 읽는 느낌이에요. '이게 왜 노벨상인가'가 오히려 선명하게 보여요 🌿"
-
-  Q: "틱톡·유튜브 쇼츠 때문에 집중력 떨어진 거잖아요, 그게 책까지 읽을 거예요?"
-  A: "이 책 읽고 나면 폰 잡을 때마다 '아 지금 내 집중력이 팔리고 있구나'가 느껴져요. 디지털 디톡스 챌린지 유행하는 이유가 있거든요 😤"
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-JSON만 출력하세요 (설명문 없이):
-
-{
-  "vol": "${ctx.year} · Vol.${String(nextVol).padStart(2,'0')}",
-  "publishDate": "${ctx.dateStr}",
-  "concept": {
-    "emoji": "이번 주 무드를 표현하는 이모지 1개",
-    "title": "큐레이션 제목 (15자 이내, 매주 다른 주제)",
-    "description": "이번 주 큐레이션 소개 2~3문장. 현재 계절/시기/트렌드 반영. 개행은 \\n"
-  },
-  "sections": {
-    "essay": {
-      "label": "✍️ 에세이",
-      "books": [
-        {
-          "title": "실제 존재하는 책 제목",
-          "author": "저자명",
-          "isbn13": "9791234567890 (정확한 13자리)",
-          "hookSentence": "독자 마음을 즉시 사로잡는 한 문장 (30자 이내, 책 핵심 분위기 반영)",
-          "qa": [
-            {
-              "q": "이 책의 실제 내용이나 트렌드와 연결된 구체적 질문",
-              "a": "책 내용·저자·트렌드를 언급한 2~4문장 구어체 답변 이모지포함"
-            },
-            {
-              "q": "다른 각도의 두 번째 질문 (추천 대상, 사회 이슈, 줄거리 힌트 등)",
-              "a": "두 번째 답변 이모지포함"
-            }
-          ],
-          "tags": ["#태그1", "#태그2", "#태그3"]
-        }
-      ]
-    },
-    "novel": { "label": "📖 소설", "books": [ /* 동일 구조 2권 */ ] },
-    "selfdev": { "label": "💡 자기계발", "books": [ /* 동일 구조 2권 */ ] },
-    "bonus": { "label": "🎁 이번 주 보너스 픽", "books": [ /* 동일 구조 1권, 보너스 이유 Q에 포함 */ ] }
-  },
-  "curatorNote": "사서의 진심 어린 마무리 코멘트 (2~3문장, 현재 시기 반영)",
-  "hashtags": "#신트리도서관 #주간큐레이션 #부평도서관 #책추천 #관련태그"
-}`;
-}
-
-/** Claude API 응답에서 JSON 추출 */
-function extractJSON(text) {
-  // JSON 코드블록 안에 있을 수 있음
-  const codeBlock = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
-  if (codeBlock) return codeBlock[1].trim();
-
-  // 바로 JSON 시작
-  const jsonStart = text.indexOf('{');
-  const jsonEnd   = text.lastIndexOf('}');
-  if (jsonStart >= 0 && jsonEnd > jsonStart) {
-    return text.slice(jsonStart, jsonEnd + 1);
-  }
-
-  throw new Error('Claude 응답에서 JSON을 찾을 수 없습니다');
-}
-
-/** 생성된 큐레이션 유효성 검사 및 보정 */
-function validateCuration(data, ctx, nextVol) {
-  const required = ['vol', 'publishDate', 'concept', 'sections', 'curatorNote', 'hashtags'];
-  for (const key of required) {
-    if (!data[key]) throw new Error(`큐레이션 필드 누락: ${key}`);
-  }
-
-  // sections 필수 검사
-  const requiredSections = ['essay', 'novel', 'selfdev', 'bonus'];
-  for (const sec of requiredSections) {
-    if (!data.sections[sec]?.books?.length) {
-      throw new Error(`섹션 [${sec}] 누락 또는 책 없음`);
+  if (!coverUrl) {
+    // 구 pool 파일(vol-01, vol-02) 또는 _naverImage 없는 경우에만 Naver API 호출
+    try {
+      if (book.isbn13) {
+        const byIsbn = await searchBook(book.isbn13);
+        if (byIsbn?.image) coverUrl = byIsbn.image;
+      }
+      if (!coverUrl) {
+        const byTitle = await searchBook(book.title);
+        if (byTitle?.image) coverUrl = byTitle.image;
+      }
+    } catch (err) {
+      console.warn(`  ⚠️  표지 로딩 실패 [${book.title}]: ${err.message}`);
     }
   }
 
-  // 날짜 보정
-  data.publishDate = ctx.dateStr;
+  // availability는 프런트에서 온디맨드로 /api/availability 호출
+  const availability = { badge: '', color: 'gray' };
 
-  // hashtags에 신트리도서관 포함 보장
-  if (!data.hashtags.includes('신트리도서관')) {
-    data.hashtags = '#신트리도서관 ' + data.hashtags;
-  }
+  return { book, coverUrl, availability };
+}
 
-  return data;
+async function generateCuration(weeklyDataPath) {
+  const weekly = JSON.parse(fs.readFileSync(weeklyDataPath, 'utf-8'));
+  const template = fs.readFileSync(path.join(__dirname, 'template.html'), 'utf-8');
+
+  console.log(`\n📚 큐레이션 생성 시작: ${weekly.vol}`);
+  console.log(`🎯 컨셉: ${weekly.concept.emoji} ${weekly.concept.title}\n`);
+
+  // 전체 도서 데이터 수집 (병렬)
+  const sectionKeys = Object.keys(weekly.sections);
+  const allBooksFlat = sectionKeys.flatMap((key) => weekly.sections[key].books);
+
+  console.log(`책 정보 수집 중 (총 ${allBooksFlat.length}권)...`);
+  const enriched = await Promise.all(allBooksFlat.map(enrichBook));
+
+  // 고유 키: isbn13 있으면 isbn13, 없으면 "title::index" 로 충돌 방지
+  const enrichedMap = {};
+  enriched.forEach(({ book, coverUrl, availability }, idx) => {
+    const key = book.isbn13 || `${book.title}::${idx}`;
+    enrichedMap[key] = { coverUrl, availability };
+  });
+
+  // 섹션별 HTML 생성 — 전체 flat 인덱스로 동일한 키 계산
+  let globalIdx = 0;
+  const sectionsHtml = sectionKeys
+    .map((key) => {
+      const section = weekly.sections[key];
+      const booksHtml = section.books
+        .map((book) => {
+          const mapKey = book.isbn13 || `${book.title}::${globalIdx}`;
+          globalIdx++;
+          const { coverUrl, availability } = enrichedMap[mapKey];
+          return renderBook(book, coverUrl, availability);
+        })
+        .join('');
+      return renderSection(key, section.label, booksHtml);
+    })
+    .join('');
+
+  // 템플릿 치환 (g 플래그로 전체 치환)
+  const html = template
+    .replace(/{{VOL}}/g, weekly.vol)
+    .replace(/{{CONCEPT_EMOJI}}/g, weekly.concept.emoji)
+    .replace(/{{CONCEPT_TITLE}}/g, weekly.concept.title)
+    .replace(/{{CONCEPT_DESC}}/g, weekly.concept.description)
+    .replace(/{{SECTIONS}}/g, sectionsHtml)
+    .replace(/{{CURATOR_NOTE}}/g, weekly.curatorNote)
+    .replace(/{{PUBLISH_DATE}}/g, weekly.publishDate)
+    .replace(/{{HASHTAGS}}/g, weekly.hashtags);
+
+  // output/ 폴더에 저장
+  const outputDir = path.join(__dirname, 'output');
+  if (!fs.existsSync(outputDir)) fs.mkdirSync(outputDir);
+  const outputPath = path.join(outputDir, `${weekly.publishDate}.html`);
+  fs.writeFileSync(outputPath, html, 'utf-8');
+
+  console.log(`\n✅ 완료! 파일 생성: output/${weekly.publishDate}.html`);
+  return outputPath;
 }
 
 /**
- * Claude API로 실시간 큐레이션 생성
- * @param {string} poolDir   - books/pool/ 절대 경로
- * @param {string} weeklyPath - books/weekly.json 경로 (저장 대상)
- * @returns {Promise<object>} - 생성된 큐레이션 데이터
+ * getCurationData — SPA용 JSON 데이터 반환
+ * weekly.json + Naver 표지 + 대출 가능 여부를 합쳐 JSON으로 반환.
+ * 캐시 파일(output/curation-cache.json)이 동일 주차·vol이면 재사용.
  */
-async function generateAICuration(poolDir, weeklyPath) {
-  if (!process.env.ANTHROPIC_API_KEY) {
-    throw new Error('ANTHROPIC_API_KEY 환경변수가 설정되지 않았습니다. .env 파일을 확인하세요.');
+async function getCurationData(weeklyDataPath) {
+  const weekly     = JSON.parse(fs.readFileSync(weeklyDataPath, 'utf-8'));
+  const outputDir  = path.join(__dirname, 'output');
+  const cacheFile  = path.join(outputDir, 'curation-cache.json');
+
+  // 캐시 유효성 검사
+  if (fs.existsSync(cacheFile)) {
+    try {
+      const cached = JSON.parse(fs.readFileSync(cacheFile, 'utf-8'));
+      if (cached._vol === weekly.vol && cached._publishDate === weekly.publishDate) {
+        // 캐시 hit — 헤더 이미지는 파일시스템에서 최신 상태 반영
+        const safeKeyC        = (weekly.publishDate || weekly.vol || 'header').replace(/[^a-zA-Z0-9\-_]/g, '_');
+        const genImgPathC     = path.join(__dirname, 'public', 'generated', `${safeKeyC}.png`);
+        cached.headerImageUrl = fs.existsSync(genImgPathC) ? `/generated/${safeKeyC}.png` : null;
+        console.log('  📦 캐시에서 큐레이션 데이터 로드');
+        return cached;
+      }
+    } catch { /* 캐시 손상 → 재생성 */ }
   }
 
-  /* Anthropic SDK 로드 */
-  let AnthropicClient;
-  try {
-    const sdk = require('@anthropic-ai/sdk');
-    AnthropicClient = sdk.Anthropic || sdk.default;
-  } catch {
-    throw new Error('@anthropic-ai/sdk 패키지가 없습니다. npm install @anthropic-ai/sdk 를 실행하세요.');
-  }
+  console.log(`\n📚 큐레이션 JSON 생성: ${weekly.vol}`);
 
-  const client = new AnthropicClient({ apiKey: process.env.ANTHROPIC_API_KEY });
+  const sectionKeys  = Object.keys(weekly.sections);
+  const allBooksFlat = sectionKeys.flatMap((key) => weekly.sections[key].books);
 
-  const ctx          = getSeasonContext();
-  const nextVol      = getNextVolNumber(poolDir);
-  const existingISBNs = getPoolISBNs(poolDir);
+  console.log(`  책 정보 수집 중 (총 ${allBooksFlat.length}권)...`);
+  const enriched = await Promise.all(allBooksFlat.map(enrichBook));
 
-  console.log(`\n  🤖 Claude AI 큐레이션 생성 시작`);
-  console.log(`  📅 날짜: ${ctx.dateStr} / 계절: ${ctx.season}`);
-  console.log(`  📚 Vol.${nextVol} 생성 중...`);
-
-  const prompt = buildCurationPrompt(ctx, nextVol, existingISBNs);
-
-  /* Claude API 호출 */
-  const response = await client.messages.create({
-    model:      'claude-sonnet-4-6',  // 고품질 큐레이션 (Sonnet 4.6)
-    max_tokens: 4096,
-    temperature: 1,                   // 창의성 최대
-    messages: [
-      { role: 'user', content: prompt }
-    ],
+  // enrichedMap 구성 (isbn13 없으면 "title::idx" 키로 충돌 방지)
+  const enrichedMap = {};
+  enriched.forEach(({ book, coverUrl, availability }, idx) => {
+    const key = book.isbn13 || `${book.title}::${idx}`;
+    enrichedMap[key] = { coverUrl: coverUrl || null, availability };
   });
 
-  const rawText = response.content?.[0]?.text;
-  if (!rawText) throw new Error('Claude API 응답이 비어 있습니다');
+  // 섹션에 coverUrl / availability 삽입
+  let globalIdx = 0;
+  const enrichedSections = {};
+  for (const key of sectionKeys) {
+    const section = weekly.sections[key];
+    enrichedSections[key] = {
+      ...section,
+      books: section.books.map((book) => {
+        const mapKey = book.isbn13 || `${book.title}::${globalIdx}`;
+        globalIdx++;
+        const { coverUrl, availability } = enrichedMap[mapKey];
+        return { ...book, coverUrl, availability };
+      }),
+    };
+  }
 
-  console.log(`  ✅ Claude 응답 수신 (${rawText.length}자)`);
+  // 이미 생성된 헤더 이미지 감지
+  const safeKey          = (weekly.publishDate || weekly.vol || 'header').replace(/[^a-zA-Z0-9\-_]/g, '_');
+  const generatedImgPath = path.join(__dirname, 'public', 'generated', `${safeKey}.png`);
+  const headerImageUrl   = fs.existsSync(generatedImgPath) ? `/generated/${safeKey}.png` : null;
 
-  /* JSON 파싱 및 검증 */
-  const jsonStr   = extractJSON(rawText);
-  const curation  = JSON.parse(jsonStr);
-  const validated = validateCuration(curation, ctx, nextVol);
+  const result = {
+    ...weekly,
+    sections:       enrichedSections,
+    headerImageUrl,
+    _vol:           weekly.vol,
+    _publishDate:   weekly.publishDate,
+    _cachedAt:      new Date().toISOString(),
+  };
 
-  /* pool/ 에 저장 (추후 재사용) */
-  if (!fs.existsSync(poolDir)) fs.mkdirSync(poolDir, { recursive: true });
-  const poolFileName = `vol-${String(nextVol).padStart(2,'0')}-ai-${ctx.dateStr}.json`;
-  const poolFilePath = path.join(poolDir, poolFileName);
-  fs.writeFileSync(poolFilePath, JSON.stringify(validated, null, 2), 'utf-8');
-  console.log(`  💾 pool 저장: ${poolFileName}`);
+  // 캐시 저장
+  if (!fs.existsSync(outputDir)) fs.mkdirSync(outputDir);
+  fs.writeFileSync(cacheFile, JSON.stringify(result, null, 2), 'utf-8');
+  console.log('  ✅ 큐레이션 JSON 생성 완료');
 
-  /* weekly.json 교체 */
-  const weeklyDir = path.dirname(weeklyPath);
-  if (!fs.existsSync(weeklyDir)) fs.mkdirSync(weeklyDir, { recursive: true });
-  fs.writeFileSync(weeklyPath, JSON.stringify(validated, null, 2), 'utf-8');
-  console.log(`  🔄 weekly.json 교체 완료`);
-
-  return validated;
+  return result;
 }
 
-module.exports = { generateAICuration };
+module.exports = { generateCuration, getCurationData };
+
+if (require.main === module) {
+  const weeklyPath = path.join(__dirname, 'books/weekly.json');
+  generateCuration(weeklyPath).catch((err) => {
+    console.error('생성 실패:', err);
+    process.exit(1);
+  });
+}
